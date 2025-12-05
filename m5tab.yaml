@@ -1,0 +1,1637 @@
+# My M5 Tab5 code, heavily based on https://github.com/GinAndBacon/m5stack-m5tab-lvgl-esphome - huge kudos to the author for doing all the hard work :)
+
+
+
+substitutions:
+  tv_vol_control: media_player.esphome_web_0bac48
+  light_control: light.smart_multicolor_bulb
+  pendant_control: light.office_pendant
+   # Substitutions for audio files
+  wake_word_triggered_sound_file: https://www.myinstants.com/media/sounds/sound-3_ARju4wR.mp3
+  tts_voice_speed: "16000" # I'm using piper for jarvis voice and somewhere saw this is needed for piper
+
+
+esphome:
+  name: m5stack-tab5-v2
+  friendly_name: M5Stack Tab5
+  platformio_options:
+    build_flags: "-DBOARD_HAS_PSRAM"
+    board_build.esp-idf.memory_type: qio_opi
+    board_build.flash_mode: dio
+    board_upload.maximum_ram_size: 524288
+    board_build.flash_size: 16MB
+
+api: # this bit is to show a teeny tiny wifi logo top right when connected to HA
+  on_client_connected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.show: lbl_hastatus
+  on_client_disconnected:
+    - if:
+        condition:
+          lambda: 'return (0 == client_info.find("Home Assistant "));'
+        then:
+          - lvgl.widget.hide: lbl_hastatus
+
+
+esp32:
+  board: esp32-p4-evboard
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    version: recommended
+    sdkconfig_options:
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+      # Moves instructions and read only data from flash into PSRAM on boot.
+      # Both enabled allows instructions to execute while a flash operation is in progress without needing to be placed in IRAM.
+      # Considerably speeds up mWW at the cost of using more PSRAM.
+      CONFIG_SPIRAM_RODATA: "y"
+      EXECUTE_FROM_PSRAM: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
+      CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
+      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
+      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
+      CONFIG_CAMERA_SC2336: "y"
+      CONFIG_SPIRAM: "y"
+      CONFIG_SPIRAM_SPEED_200M: "y"
+      CONFIG_EXAMPLE_ENABLE_CAM_SENSOR_PIC_HFLIP: "y"
+      CONFIG_EXAMPLE_ENABLE_CAM_SENSOR_PIC_VFLIP: "y"
+      CONFIG_EXAMPLE_VIDEO_BUFFER_TYPE_DRIVER: "y"
+      CONFIG_ESP_VIDEO_ENABLE_HW_H264_VIDEO_DEVICE: "y"
+      CONFIG_ESP_VIDEO_ENABLE_HW_JPEG_VIDEO_DEVICE: " y"
+    advanced:
+      enable_idf_experimental_features: true
+     # execute_from_psram: true
+    components:
+      - espressif/esp_hosted^2.7.0
+      - espressif/esp_wifi_remote^1.2.2
+esp32_hosted:
+  variant: esp32c6
+  active_high: true
+  clk_pin: GPIO12
+  cmd_pin: GPIO13
+  d0_pin: GPIO11
+  d1_pin: GPIO10
+  d2_pin: GPIO9
+  d3_pin: GPIO8
+  reset_pin: GPIO15
+  slot: 1
+
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+
+
+ota:
+  - platform: esphome
+    id: ota_esphome
+
+wifi:
+  id: wifi_id
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+external_components:
+    - source: github://pr#12127
+      components: [esp32]
+      refresh: 1h
+
+network:
+  enable_ipv6: false
+
+i2c:
+  - id: bsp_bus
+    sda: GPIO31
+    scl: GPIO32
+    frequency: 400kHz
+
+pi4ioe5v6408:
+  - id: pi4ioe1
+    address: 0x43
+    # 0: O - wifi_antenna_int_ext
+    # 1: O - speaker_enable
+    # 2: O - external_5v_power
+    # 3: NC
+    # 4: O - lcd reset
+    # 5: O - touch panel reset
+    # 6: O - camera reset
+    # 7: I - headphone detect
+  - id: pi4ioe2
+    address: 0x44
+    # 0: O - wifi_power
+    # 1: NC
+    # 2: NC
+    # 3: O - usb_5v_power
+    # 4: O - poweroff pulse
+    # 5: O - quick charge enable (inverted)
+    # 6: I - charging status
+    # 7: O - charge enable
+
+font: # Came from one of my old projects, not used yet.
+
+  - file: 'materialdesignicons-webfont.ttf'
+    id: icon_font_30
+    size: 30
+    glyphs:
+      - "\U000F050F" # Temp
+      - "\U000F029A" # Pressure
+      - "\U000F15FA" # Wind
+      - "\U000F058C" # Rain
+      - "\U000F0643" # Man home
+      - "\U000F0B96" # Man away
+      - "\U000F1077" # Woman home
+      - "\U000F1078" # Woman away
+      - "\U000F0828" # Hot Tub
+      - "\U000F0504" # Big Celcius
+      - "\U000F0438" # Radiator On
+      - "\U000F0AD7" # Radiator Off
+      - "\U000F0F92" # Boiler on
+      - "\U000F11B4" # Boiler off
+      - "\U000F02DC" # House
+      - "\U000F0595" # Outside
+      - "\U000F0474" # School
+      - "\U000F00A3" # Bike
+      - "\U000F0111" # Shopping
+      - "\U000F0583" # Walking
+      - "\U000F0A44" # Dog
+      - "\U000F0098" # Beer
+
+
+
+  - file: 'materialdesignicons-webfont.ttf'
+    id: conditions
+    size: 70
+    glyphs:
+      - "\U000F0594" # Night Time Clear
+      - "\U000F0F31" # Night Time Dry/Part Cloudy
+      - "\U000F0595" # Partly Cloudy
+      - "\U000F0590" # Cloudy.
+      - "\U000F059B" #Dusk/Dry
+      - "\U000F0599" #Sunny/Dry
+      - "\U000F0596" #Raining
+      - "\U000F0F33" #Stopped Raining
+      - "\U000F067F" #Sleet
+      - "\U000F0F36" #Snowing
+      - "\U000F0591" #Fog
+      - "\U000F0F30" #Haze
+
+  - file: 'Roboto-Medium.ttf'
+    id: roboto
+    size: 70
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '+', '-', '_', ':', '°', '0',
+        '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+        'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+        'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+        'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+        'u', 'v', 'w', 'x', 'y', 'z', '/', 'è']
+
+  - file: 'Roboto-Medium.ttf'
+    id: robotosm
+    size: 30
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '+', '-', '_', ':', '°', '0',
+        '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+        'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+        'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+        'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+        'u', 'v', 'w', 'x', 'y', 'z', '/', 'è']
+switch:
+  - platform: gpio
+    id: wifi_power
+    name: "WiFi Power"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 0
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: usb_5v_power
+    name: "USB Power"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 3
+  - platform: gpio
+    id: quick_charge
+    name: "Quick Charge"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 5
+      inverted: true
+  - platform: gpio
+    id: charge_enable
+    name: "Charge Enable"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 7
+
+  - platform: gpio
+    id: wifi_antenna_int_ext
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 0
+  - platform: gpio
+    id: speaker_enable
+    name: "Speaker Enable"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 1
+    restore_mode: ALWAYS_ON
+  - platform: gpio
+    id: external_5v_power
+    name: "External 5V Power"
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 2
+
+  # Wake Word Sound Switch.
+  - platform: template
+    id: wake_sound
+    name: Wake sound
+    icon: "mdi:bullhorn"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+ # Even with backlight off, you can apparently get burn in. This prevents it, but runs as night (when backlight is off, so you don't see it)   See later for the nighttime schedule.
+
+  - platform: template
+    name: Antiburn
+    id: switch_antiburn
+    icon: mdi:television-shimmer
+    optimistic: true
+    entity_category: "config"
+    turn_on_action:
+      - logger.log: "Starting Antiburn"
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+      - lvgl.pause:
+          show_snow: true
+    turn_off_action:
+      - logger.log: "Stopping Antiburn"
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+binary_sensor: #Some sensors from HA, not using the TV one at the moment.
+
+  - platform: homeassistant
+    id: tv_r
+    entity_id: media_player.samsung_tv
+    trigger_on_initial_state: true
+
+
+  - platform: homeassistant
+    id: office_pendant
+    entity_id: light.office_pendant
+    publish_initial_state: true
+    on_state:
+      then:
+        lvgl.widget.update:
+          id: light_btn
+          state:
+            checked: !lambda return x;
+
+  - platform: gpio
+    id: charging
+    name: "Charging Status"
+    pin:
+      pi4ioe5v6408: pi4ioe2
+      number: 6
+      mode: INPUT_PULLDOWN
+
+  - platform: gpio
+    id: headphone_detect
+    name: "Headphone Detect"
+    filters:
+      - delayed_on: 200ms
+      - delayed_off: 200ms
+    pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 7
+
+text_sensor: # More HA sensors, the shopping one  is a command line sensor in HA and looks like this :
+# - sensor:
+#     name: "Items in shopping list"
+#     command: "jq '[.[] | select(.complete==false) | .name]' .shopping_list.json"
+#     value_template: "{{ value_json | map('string') | join(',') }}"
+#     scan_interval: 1
+
+  - platform: homeassistant
+    id: shopping
+    entity_id: sensor.items_in_shopping_list
+    on_value:
+       - lvgl.label.update:
+          id: shopping_list
+          text: !lambda |-
+              return (id(shopping).state).c_str();
+
+# sensor for my central heating and the logo changes colour when the heating is on.
+  - platform: homeassistant
+    id: climate_action
+    entity_id: climate.hallway
+    attribute: hvac_action
+    on_value:
+      - lambda: |-
+          std::string action = id(climate_action).state;
+
+          if (action == "heating") {
+            lv_obj_set_style_img_recolor_opa(id(hive_img), LV_OPA_70, LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(hive_img), lv_color_hex(0xFF6600), LV_PART_MAIN);
+          }  else if (action == "idle") {
+            lv_obj_set_style_img_recolor_opa(id(hive_img), LV_OPA_70, LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(hive_img), lv_color_hex(0xb6d7a8), LV_PART_MAIN);
+          } else {
+            lv_obj_set_style_img_recolor_opa(id(hive_img), LV_OPA_TRANSP, LV_PART_MAIN);
+          }
+
+# similarly for the hot water, changes colour too. These are both from the Hive integration in HA
+
+  - platform: homeassistant
+    id: water_boiler_operation_mode
+    entity_id: water_heater.hallway
+    attribute: operation_mode
+    on_value:
+      - lambda: |-
+          std::string action = id(water_boiler_operation_mode).state;
+
+          if (action == "on") {
+            lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_70, LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(boiler_img), lv_color_hex(0xFF6600), LV_PART_MAIN);
+          }  else if (action == "off") {
+            lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_70, LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(boiler_img), lv_color_hex(0xb6d7a8), LV_PART_MAIN);
+          } else {
+            lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_TRANSP, LV_PART_MAIN);
+          }
+
+
+sensor:
+  - platform: ina226
+    address: 0x41
+    adc_averaging: 16
+    max_current: 8.192A
+    shunt_resistance: 0.005ohm
+    bus_voltage:
+      name: Battery Voltage
+    current:
+      name: Battery Current
+      # Positive means discharging
+      # Negative means charging
+
+
+
+  - platform: homeassistant
+    id: light_slider
+    entity_id: $light_control
+    attribute: brightness
+    on_value:
+      then:
+      - lvgl.slider.update:
+          id: slider_id2
+          value: !lambda return x;
+
+
+  - platform: homeassistant
+    id: volume_level
+    entity_id: $tv_vol_control
+    attribute: volume_level
+
+  - platform: homeassistant
+    id: light_state
+    entity_id: $light_control
+    attribute: brightness
+
+  - platform: homeassistant
+    id: room_thermostat
+    entity_id: climate.hallway
+    attribute: temperature
+    on_value:
+      - lvgl.spinbox.update:
+          id: spinbox_id
+          value: !lambda return x;
+
+
+
+
+
+time:
+  - platform: homeassistant
+    id: time_comp
+    on_time_sync:
+      - script.execute: time_update
+    on_time:
+      - minutes: '*'
+        seconds: 0
+        then:
+          - script.execute: time_update
+
+# this it the antiburn schedule previously mentioned.
+
+  - platform: homeassistant
+    id: ha_time
+    on_time:
+      - hours: 2,3,4,5
+        minutes: 5
+        seconds: 0
+        then:
+          - switch.turn_on: switch_antiburn
+      - hours: 2,3,4,5
+        minutes: 35
+        seconds: 0
+        then:
+          - switch.turn_off: switch_antiburn
+
+      - hours: 8
+        minutes: 0
+        seconds: 0
+        then:
+            - logger.log: "LVGL is awake"
+            - light.turn_on:
+                 id: backlight
+                 transition_length: 15s
+
+      - hours: 18
+        minutes: 0
+        seconds: 0
+        then:
+           - logger.log: "LVGL is idle"
+           - light.turn_off:
+                 id: backlight
+                 transition_length: 15s
+           - lvgl.pause:
+number:
+  - platform: template
+    name: m5tab screen timeout
+    optimistic: true
+    id: display_timeout
+    unit_of_measurement: "s"
+    initial_value: 300
+    restore_value: true
+    min_value: 1
+    max_value: 300
+    step: 5
+    mode: box
+
+  - platform: template
+    name: screen brightness
+    optimistic: true
+    id: brightness_label
+    min_value: 8
+    max_value: 255
+    step: 5
+    mode: box
+ #   value: 128
+    on_value:
+      - light.turn_on:
+          id: backlight
+          brightness: !lambda 'return x / 255;'
+
+touchscreen:
+  - platform: gt911
+    interrupt_pin: GPIO23
+    display: my_lcd
+    update_interval: never
+    reset_pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 5
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false
+    calibration:
+      x_min: 0
+      x_max: 1280
+      y_min: 0
+      y_max: 720
+    id: my_touchscreen
+    on_release:
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - logger.log: "LVGL resuming"
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - light.turn_on: backlight
+
+esp_ldo:
+  - voltage: 2.5V
+    channel: 3
+
+display:
+  - platform: mipi_dsi
+    id: my_lcd
+    dimensions:
+      height: 1280
+      width: 720
+    model: M5Stack-Tab5
+   # invert_colors: true
+    reset_pin:
+      pi4ioe5v6408: pi4ioe1
+      number: 4
+   # show_test_card: true
+    rotation: 270
+
+output:
+  - platform: ledc
+    pin: GPIO22
+    id: backlight_pwm
+    frequency: 1000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Display Backlight"
+    id: backlight
+    default_transition_length: 250ms
+    restore_mode: ALWAYS_ON
+    initial_state:
+      brightness: "50%"
+
+# First you need to define all the images you want to use. There are located in the images directory with config/esphome on my HA server.
+
+image:
+
+  - file: "images/hive_96.png"
+    id: hive_icon
+    resize: 70x70
+    type: RGB565
+    transparency: alpha_channel
+
+  - file: "images/blank.png"
+    id: blank_img
+    type: RGB565
+
+
+  - file: "original.jpeg"
+    id: jarvis
+    resize: 1300x800
+    type: RGB565
+    byte_order: little_endian
+
+# Definition for MDI icons. GinAndBacon did a neat thing to animate them with a slightly smaller logo, hence 2 definition of the same icon,
+
+  - file: mdi:kodi
+    id: kodi_icon
+    type: grayscale
+    transparency: alpha_channel
+    resize: 180x180
+
+  - file: mdi:kodi
+    id: kodi_icon_2
+    type: grayscale
+    transparency: alpha_channel
+    resize: 150x150
+
+  - file: mdi:water-boiler
+    id: water_boiler
+    type: grayscale
+    transparency: alpha_channel
+    resize: 70x70
+
+
+
+
+
+
+
+  - file: "replying.png"
+    id: jarvis_round
+    type: RGB565
+    resize: 150x150
+    transparency: alpha_channel
+    byte_order: little_endian
+
+
+
+
+  - file: "images/green_strat.png"
+    id: green_strat
+    type: RGB565
+    resize: 300x300
+    transparency: alpha_channel
+    byte_order: little_endian
+
+# These are little travel poster images, which change randomly every 5 mins. You can use whatever really
+
+  - file: "images/Budapest.png"
+    id: budapest
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/LosAngeles.png"
+    id: los_angeles
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Rio.png"
+    id: rio
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/SanDiego.png"
+    id: san_diego
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Bangkok.png"
+    id: bangkok
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+
+
+  - file: "images/Seville.png"
+    id: seville
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+
+
+  - file: "images/NewYork.png"
+    id: new_york
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Boston.png"
+    id: boston
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Venice.png"
+    id: venice
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Tenerife.png"
+    id: tenerife
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Berlin.png"
+    id: berlin
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Lima.png"
+    id: lima
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Santiago.png"
+    id: santiago
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+  - file: "images/Marrakech.png"
+    id: marrakech
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
+
+  - file: mdi:lightbulb-multiple-outline
+    id: dlight
+    type: grayscale
+    resize: 180x180
+    transparency: alpha_channel
+
+  - file: mdi:lightbulb-multiple-outline
+    id: dlight_2
+    type: grayscale
+    resize: 150x150
+    transparency: alpha_channel
+
+  - file: mdi:play-outline
+    id: playpause
+    type: grayscale
+    resize: 180x180
+    transparency: alpha_channel
+
+  - file: mdi:play-outline
+    id: playpause_2
+    type: grayscale
+    resize: 150x150
+    transparency: alpha_channel
+
+  - file: mdi:lightbulb-outline
+    id: alb
+    type: grayscale
+    resize: 180x180
+    transparency: alpha_channel
+
+  - file: mdi:lightbulb-outline
+    id: alb_2
+    type: grayscale
+    resize: 150x150
+    transparency: alpha_channel
+
+
+
+  - file: mdi:plus
+    id: plus
+    resize: 80x80
+    type: grayscale
+    transparency: alpha_channel
+
+  - file: mdi:minus
+    id: minus
+    resize: 80x80
+    type: grayscale
+    transparency: alpha_channel
+
+
+  - file: mdi:television
+    id: tvpwr
+    type: grayscale
+    resize: 125x125
+    transparency: alpha_channel
+
+# The code that changes the travel poster every 5 mins.
+
+interval:
+  - interval: 5minutes
+    then:
+      - lambda: |-
+          // Pick a random image
+          const lv_img_dsc_t* imgs[] = {
+            id(budapest).get_lv_img_dsc(),
+            id(rio).get_lv_img_dsc(),
+            id(los_angeles).get_lv_img_dsc(),
+            id(san_diego).get_lv_img_dsc(),
+            id(seville).get_lv_img_dsc(),
+            id(venice).get_lv_img_dsc(),
+            id(new_york).get_lv_img_dsc(),
+            id(boston).get_lv_img_dsc(),
+            id(tenerife).get_lv_img_dsc(),
+            id(bangkok).get_lv_img_dsc(),
+            id(berlin).get_lv_img_dsc(),
+            id(lima).get_lv_img_dsc(),
+            id(santiago).get_lv_img_dsc(),
+            id(marrakech).get_lv_img_dsc()
+          };
+          int r = esp_random() % 14;
+          lv_img_set_src(id(random_img), imgs[r]);
+
+
+lvgl:
+  buffer_size: 100%
+  byte_order: little_endian
+
+# this bit is from the original code which turns the backlight off based on display_timeout value, I just turn mine off at the end work day and back on the next day.
+
+  #on_idle:
+  #  timeout: !lambda "return (id(display_timeout).state * 1000);"
+  #  then:
+  #    - logger.log: "LVGL is idle"
+  #    - light.turn_off:
+  #        id: backlight
+  #        transition_length: 15s
+  #    - lvgl.pause:
+
+
+# so the top layer has some bits which will show on every page. There's the HA connected icon and some navigation buttons (which i dont use as i've implemented swipe between screens)
+  top_layer:
+    widgets:
+      - label:
+          text: "\uF1EB"
+          id: lbl_hastatus
+          hidden: true
+          align: top_right
+          x: -20
+          y: 20
+          text_align: right
+          text_color: 0xFFFFFF
+      - buttonmatrix:
+          align: bottom_mid
+          styles: header_footer
+          pad_all: 0
+          outline_opa: 70%
+          outline_width: 4
+          outline_color: 0xffffff
+          id: top_layer
+          items:
+            styles: header_footer
+          rows:
+            - buttons:
+              - id: page_prev
+                text: "\uF053"
+                on_press:
+                  then:
+                    lvgl.page.previous:
+              - id: page_home
+                text: "\uF015"
+                on_press:
+                  then:
+                    lvgl.page.show: coverpage
+              - id: page_next
+                text: "\uF054"
+                on_press:
+                  then:
+                    lvgl.page.next:
+
+  displays:
+    - my_lcd
+  touchscreens:
+    - my_touchscreen
+
+# Page definitions, each one has the swipe control
+  pages:
+    - id: coverpage
+      on_swipe_left:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.next:
+      on_swipe_right:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.previous:
+      bg_image_src: jarvis
+     # bg_color: 0x5f6160
+     # mode: REAL
+     # border_width: 30
+     # pad_right: 30
+
+# Note that the widgets are in any particular order and certainly don't relate to the layout on the screen (sorry)
+      widgets:
+      - image: # Hive logo
+          id: hive_img
+          src: hive_icon
+          y: 215
+          x: -123
+          align: CENTER
+
+      - image: # water boiler
+          id: boiler_img
+          src: water_boiler
+          y: 215
+          x: -200
+          align: CENTER
+
+      - image: # random travel poster
+             id: random_img
+             src: berlin # need to start with one of them
+             x: 1025
+             y: 10
+             radius: 11
+             clip_corner: true
+
+
+      - label: # shopping list
+            x: 80
+            y: 430
+
+            id: shopping_list
+            text_font: robotosm
+            recolor: true
+            text_color: 0x00f4ff
+
+
+
+
+      - obj: # clock container - pinched from lvgl cookbook doc, I just tweaked the colours to match my theme.
+            height: 240
+            width: 240
+            x: 400
+            y: 203
+            pad_all: 0
+            border_width: 0
+            bg_opa: TRANSP
+            widgets:
+              - meter: # clock face
+                  height: 220
+                  width: 220
+                  align: CENTER
+                  bg_opa: TRANSP
+                  border_width: 0
+
+                  scales:
+                    - range_from: 0 # minutes scale
+                      range_to: 60
+                      angle_range: 360
+                      rotation: 270
+                      ticks:
+                        width: 1
+                        count: 61
+                        length: 10
+                        color: 0xffffff
+                      indicators:
+                        - line:
+                            id: minute_hand
+                            width: 3
+                            color: 0xa6a6a6
+                            r_mod: -4
+                            value: 0
+                    - range_from: 1 # hours scale for labels
+                      range_to: 12
+                      angle_range: 330
+                      rotation: 300
+                      ticks:
+                        width: 1
+                        count: 12
+                        length: 1
+                        major:
+                          stride: 1
+                          width: 4
+                          length: 10
+                          color: 0x00f4ff
+                          label_gap: 12
+                    - range_from: 0 # hi-res hours scale for hand
+                      range_to: 720
+                      angle_range: 360
+                      rotation: 270
+                      ticks:
+                        count: 0
+                      indicators:
+                        - line:
+                            id: hour_hand
+                            width: 5
+                            color: 0x00f4ff
+                            r_mod: -30
+                            value: 0
+
+      - slider: # office lamp slider
+            x: 35
+            y: 30
+            width: 660
+            height: 75
+            id: slider_id2
+            bg_opa: 70%
+            border_width: 3
+            line_color: 0xffffff
+            bg_grad_color: 0xf0e0a1
+            bg_grad_dir: HOR
+            border_opa: 90%
+            image_recolor_opa: 30%
+            border_color: 0x7cb342
+            bg_image_recolor_opa: 70%
+            bg_image_recolor: 0x7cb342
+            outline_width: 1
+            outline_color: 0xffffff
+            bg_color: 0x7cb342
+            pad_all: 0
+            value: 0
+            min_value: 1
+            max_value: 255
+            anim_time: 100ms
+            knob:
+                radius: 1
+                width: 1
+              #  align: CENTER
+                height: 100%
+                bg_color: 0xffffff
+            #    bg_color_opa: 95%
+                bg_opa: COVER
+                pad_top: 4
+                pad_bottom: 4
+                pad_right: -38
+                pad_left: -38
+           # adjustable: true
+            indicator:
+                radius: 1
+                width: 1
+                #align: CENTER
+                bg_grad_color: 0xf1e0f0
+           #     bg_grad_color: 0xffffff
+                bg_grad_dir: HOR
+                height: 100%
+                pad_top: 4
+                pad_bottom: 4
+                pad_right: 3
+                pad_left: 3
+             #   pad_all: 4
+           #     pad_bottom: -30
+                bg_color: 0xf0e0a1
+                bg_opa: 90%
+          #      image_recolor_opa: 90%
+            on_click:
+                - homeassistant.service:
+                    service: light.turn_on
+                    data:
+                      entity_id: $light_control
+                      brightness: !lambda return int(x);
+
+
+
+
+
+
+
+
+
+
+
+
+      - button: # office pendant
+            #y: -265
+            #x: 350
+            y: 230
+            x: 350
+            id: light_btn
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP
+            bg_image_recolor_opa: COVER
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+           # checkable: true
+            widgets:
+              - image:
+                  align: CENTER
+                  src: dlight_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x4dd0e1
+              - animimg:
+                  align: CENTER
+                  id: anim_id6
+                  src: [ dlight_2, dlight ]
+                  duration: 150ms
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x4dd0e1
+                  auto_start: false
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id6
+                      repeat_count: 5
+                - homeassistant.action:
+                    action: light.toggle
+                    data:
+                      entity_id: light.office_pendant
+
+
+
+
+
+
+
+
+      - button: # Kodi
+            #y: -265
+            #x: 175
+            y: 230
+            x: 175
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: TRANSP
+            bg_image_recolor_opa: COVER
+            outline_width: 4
+            outline_opa: 70%
+            outline_color: 0xffffff
+            align: CENTER
+            bg_image_opa: 10%
+            widgets:
+              - image:
+                  align: CENTER
+                  src: kodi_icon_2
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x4dd0e1
+              - animimg:
+                  align: CENTER
+                  id: anim_id9
+                  src: [ kodi_icon_2, kodi_icon ]
+                  duration: 150ms
+                  outline_opa: TRANSP
+                  bg_grad_color: 0x00334d
+                  bg_grad_dir: HOR
+                  bg_opa: 50%
+                  bg_image_recolor_opa: COVER
+                  image_recolor_opa: COVER
+                  image_recolor: 0x4dd0e1
+                  auto_start: false
+            pressed: # set some button colors to be different in pressed state
+              bg_color: 0xffffff
+              bg_grad_color: 0x00334d
+              bg_grad_dir: HOR
+              bg_opa: 90%
+              bg_image_opa: 20%
+              outline_width: 8
+              outline_opa: COVER
+              outline_color: 0x000000
+            on_press:
+              then:
+                - lvgl.animimg.update:
+                      id: anim_id9
+                      repeat_count: 5
+
+                - homeassistant.service:
+                    service: script.turn_on
+                    data:
+                      entity_id: script.start_kodi
+
+
+
+
+
+
+      - button: # Darth/Jarvis
+            y: 250
+            x: 203
+            width: 150
+            height: 150
+            bg_color: 0xffffff
+            bg_opa: 0%
+            bg_image_recolor_opa: COVER
+            outline_width: 0
+            outline_opa: COVER
+            outline_color: 0x9e9fa0
+            widgets:
+              - image:
+                  align: CENTER
+                  src: jarvis_round
+
+            pressed: # set some button colors to be different in pressed state
+               bg_color: 0xd84315
+               bg_opa: COVER
+               outline_width: 8
+               outline_opa: COVER
+               outline_color: 0xffffff
+               image_recolor_opa: 95%
+               image_recolor: 0x000000
+               bg_image_opa: COVER
+               bg_image_recolor: 0xffffff
+            on_short_click:
+              - homeassistant.service:
+                  action: media_player.volume_mute
+                  data:
+                     entity_id: media_player.sony_android_tv
+                     is_volume_muted: "true"
+
+              - voice_assistant.start:
+            on_long_press:
+                - voice_assistant.start:
+                    silence_detection: false
+            on_release:
+           #     - voice_assistant.stop:
+            #    - delay: 200ms
+                - if:
+                    condition:
+                      not:
+                         voice_assistant.is_running:
+                    then:
+                      - voice_assistant.stop:
+
+
+# second page needs more work, just has some random stuff I'm testing.
+    - id: second_page
+      on_swipe_left:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.next:
+      on_swipe_right:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.previous:
+      bg_color: 0x021852
+      widgets:
+
+        - button: # strat
+            y: -15
+            x: 250
+            width: 300
+            height: 300
+            bg_color: 0xffffff
+            bg_opa: 0%
+            bg_image_recolor_opa: COVER
+            outline_width: 0
+            outline_opa: COVER
+            outline_color: 0x9e9fa0
+            align: CENTER
+            widgets:
+              - image:
+                  align: CENTER
+                  src: green_strat
+
+        - label:
+            # thermostat control but I'm not happy with it, hence being relegated here :)
+            id: internal_temp_display
+            text_font: roboto
+            text_color: 0x2abbbb
+        - obj: # climate control
+              x: 35
+              y: 550
+              bg_opa: 0%
+              layout:
+                type: FLEX
+                flex_flow: ROW
+                flex_align_cross: CENTER
+
+              width: SIZE_CONTENT
+              height: SIZE_CONTENT
+              widgets:
+                - button:
+                    id: spin_down
+                    on_click:
+                      - lvgl.spinbox.decrement: spinbox_id
+                    widgets:
+                      - image:
+                          align: CENTER
+                          src: minus
+                          outline_opa: TRANSP
+                          bg_grad_color: 0x00334d
+                          bg_grad_dir: HOR
+                          bg_opa: 0%
+                          bg_image_recolor_opa: COVER
+                          image_recolor_opa: COVER
+                          image_recolor: 0x2E8AB8
+                - spinbox:
+                    id: spinbox_id
+                    align: CENTER
+                    text_align: CENTER
+                    text_font: roboto
+                    width: 150
+                    range_from: 15
+                    range_to: 35
+                    selected_digit: 0
+                    rollover: false
+                    digits: 2
+                    decimal_places: 0
+                    on_value:
+                      then:
+                        - homeassistant.action:
+                            action: climate.set_temperature
+                            data:
+                              temperature: !lambda return x;
+                              entity_id: climate.hallway
+                - button:
+                    id: spin_up
+                    on_click:
+                      - lvgl.spinbox.increment: spinbox_id
+                    widgets:
+                      - image:
+                          align: CENTER
+                          src: plus
+                          outline_opa: TRANSP
+                          bg_grad_color: 0x00334d
+                          bg_grad_dir: HOR
+                          bg_opa: 0%
+                          bg_image_recolor_opa: COVER
+                          image_recolor_opa: COVER
+                          image_recolor: 0x2E8AB8
+
+
+
+
+
+
+# Example grid layout with 5 travel posters
+    - id: third_page
+      on_swipe_left:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.next:
+      on_swipe_right:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.previous:
+      bg_color: 0x021852
+      widgets:
+      - image:
+         x: 3
+         y: 3
+         src: santiago
+         radius: 11
+         clip_corner: true
+      - image:
+         x: 216
+         y: 3
+         src: marrakech
+         radius: 11
+         clip_corner: true
+      - image:
+         x: 419
+         y: 3
+         src: seville
+         radius: 11
+         clip_corner: true
+      - image:
+         x: 632
+         y: 3
+         src: san_diego
+         radius: 11
+         clip_corner: true
+      - image:
+         x: 845
+         y: 3
+         src: new_york
+         radius: 11
+         clip_corner: true
+      - image:
+         x: 1058
+         y: 3
+         src: berlin
+         radius: 11
+         clip_corner: true
+
+
+  style_definitions:
+    - id: header_footer
+      bg_color: 0xffffff
+      #bg_color: 0x2F8CD8
+      bg_grad_color: 0xffffff
+      bg_grad_dir: VER
+      bg_opa: TRANSP
+      outline_width: 3
+      radius: 0
+      pad_all: 0
+      pad_row: 0
+      pad_column: 0
+      border_color: 0xffffff
+      text_color: 0xffffff
+      line_color: 0xffffff
+      width: 100%
+      height: 40
+
+
+# Lots of code here taken, unchanged from GinAndBacon's repo
+
+# The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
+select:
+  - platform: es8388
+    dac_output:
+      name: DAC Output
+    adc_input_mic:
+      name: ADC Input Mic
+
+  - platform: template
+    id: wifi_antenna_select
+    name: "WiFi Antenna"
+    options:
+      - "Internal"
+      - "External"
+    optimistic: true
+    on_value:
+      - if:
+          condition:
+            lambda: return i == 0;
+          then:
+            - switch.turn_off: wifi_antenna_int_ext
+          else:
+            - switch.turn_on: wifi_antenna_int_ext
+
+  - platform: template
+    name: "Wake word sensitivity"
+    optimistic: true
+    initial_option: Slightly sensitive
+    restore_value: true
+    entity_category: config
+    options:
+      - Slightly sensitive
+      - Moderately sensitive
+      - Very sensitive
+    on_value:
+      # Sets specific wake word probabilities computed for each particular model
+      # Note probability cutoffs are set as a quantized uint8 value, each comment has the corresponding floating point cutoff
+      # False Accepts per Hour values are tested against all units and channels from the Dinner Party Corpus.
+      # These cutoffs apply only to the specific models included in the firmware: okay_nabu@20241226.3, hey_jarvis@v2, hey_mycroft@v2
+      lambda: |-
+        if (x == "Slightly sensitive") {
+          id(okay_nabu).set_probability_cutoff(217);    // 0.85 -> 0.000 FAPH on DipCo (Manifest's default)
+          id(hey_jarvis).set_probability_cutoff(247);   // 0.97 -> 0.563 FAPH on DipCo (Manifest's default)
+          id(hey_mycroft).set_probability_cutoff(253);  // 0.99 -> 0.567 FAPH on DipCo
+        } else if (x == "Moderately sensitive") {
+          id(okay_nabu).set_probability_cutoff(176);    // 0.69 -> 0.376 FAPH on DipCo
+          id(hey_jarvis).set_probability_cutoff(235);   // 0.92 -> 0.939 FAPH on DipCo
+          id(hey_mycroft).set_probability_cutoff(242);  // 0.95 -> 1.502 FAPH on DipCo (Manifest's default)
+        } else if (x == "Very sensitive") {
+          id(okay_nabu).set_probability_cutoff(143);    // 0.56 -> 0.751 FAPH on DipCo
+          id(hey_jarvis).set_probability_cutoff(212);   // 0.83 -> 1.502 FAPH on DipCo
+          id(hey_mycroft).set_probability_cutoff(237);  // 0.93 -> 1.878 FAPH on DipCo
+        }
+
+
+i2s_audio:
+  - id: mic_bus
+    i2s_lrclk_pin: GPIO29
+    i2s_bclk_pin: GPIO27
+    i2s_mclk_pin: GPIO30
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    bits_per_sample: 16bit
+    sample_rate: 16000
+
+microphone:
+  - platform: i2s_audio
+    id: tab5_microphone
+    i2s_din_pin: GPIO28
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    adc_type: external
+
+audio_dac:
+  - platform: es8388
+    id: es8388_dac
+
+speaker:
+  - platform: i2s_audio
+    id: tab5_speaker
+    i2s_dout_pin: GPIO26
+    audio_dac: es8388_dac
+    dac_type: external
+    channel: mono
+    buffer_duration: 100ms
+    bits_per_sample: 16bit
+    sample_rate: 48000
+
+media_player:
+  - platform: speaker
+    name: None
+    id: external_media_player
+    internal: false
+    volume_increment: 0.05
+    volume_min: 0.4
+    volume_max: 0.85
+    announcement_pipeline:
+      speaker: tab5_speaker
+      format: FLAC
+      sample_rate: 48000
+      num_channels: 1
+    on_announcement:
+      # Stop the wake word (mWW or VA) if the mic is capturing
+       - light.turn_on:
+          id: backlight
+          #transition_length: 15s
+       - if:
+          condition:
+            - microphone.is_capturing:
+          then:
+            - micro_wake_word.stop:
+    on_idle:
+      # Since VA isn't running, this is the end of user-intiated media playback. Restart the wake word.
+      - if:
+          condition:
+            not:
+              voice_assistant.is_running:
+          then:
+            - micro_wake_word.start:
+
+    files:
+      - id: wake_word_triggered_sound
+        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
+
+micro_wake_word:
+  id: mww
+  microphone:
+    microphone: tab5_microphone
+  models:
+    - model: https://github.com/kahrendt/microWakeWord/releases/download/okay_nabu_20241226.3/okay_nabu.json
+      id: okay_nabu
+    - model: hey_jarvis
+      id: hey_jarvis
+    - model: hey_mycroft
+      id: hey_mycroft
+  vad:
+  on_wake_word_detected:
+   # If a timer is ringing: Stop it, do not start the voice assistant (We can stop timer from voice!)
+    #- if:
+    #    condition:
+    #      switch.is_on: wake_sound
+    #    then:
+    #      - script.execute:
+    #          id: play_sound
+    #          priority: true
+    #          sound_file: !lambda return id(wake_word_triggered_sound);
+    #      - delay: 250ms
+    - light.turn_on:
+          id: backlight
+          transition_length: 15s
+    - voice_assistant.start:
+        wake_word: !lambda return wake_word;
+
+voice_assistant:
+  id: va
+  microphone: tab5_microphone
+  media_player: external_media_player
+  micro_wake_word: mww
+  on_end:
+    # Wait a short amount of time to see if an announcement starts
+    - wait_until:
+        condition:
+          - media_player.is_announcing:
+        timeout: 0.5s
+    # Announcement is finished and the I2S bus is free
+    - wait_until:
+        - and:
+            - not:
+                media_player.is_announcing:
+            - not:
+                speaker.is_playing:
+    - micro_wake_word.start:
+  on_client_connected:
+    - micro_wake_word.start:
+  on_client_disconnected:
+    - micro_wake_word.stop:
+
+
+button:
+  - platform: restart
+    id: restart_button
+    name: "Restart"
+    entity_category: config
+    disabled_by_default: true
+    icon: "mdi:restart"
+
+script:
+  # Script executed when we want to play sounds on the device.
+  - id: play_sound
+    parameters:
+      priority: bool
+      sound_file: "audio::AudioFile*"
+    then:
+      - lambda: |-
+          if (priority) {
+            id(external_media_player)
+              ->make_call()
+              .set_command(media_player::MediaPlayerCommand::MEDIA_PLAYER_COMMAND_STOP)
+              .set_announcement(true)
+              .perform();
+          }
+          if ( (id(external_media_player).state != media_player::MediaPlayerState::MEDIA_PLAYER_STATE_ANNOUNCING ) || priority) {
+            id(external_media_player)
+              ->play_file(sound_file, true, false);
+          }
+
+# code to move the clocks hands - seriously, you have to do it all yourself LOL.
+  - id: time_update
+    then:
+      - lvgl.indicator.update:
+          id: minute_hand
+          value: !lambda |-
+            return id(time_comp).now().minute;
+      - lvgl.indicator.update:
+          id: hour_hand
+          value: !lambda |-
+            auto now = id(time_comp).now();
+            return std::fmod(now.hour, 12) * 60 + now.minute;
+
+# TODO - if you've read this far, here's what else I'd like to add :
+# 1 - Aninmate the jarvis logo based on voice assistant activity
+# 2 - Get a better thermostat control
+# 3 - Implement some person cards to show family member home/away status
+# 4 - I'd like to pull the media image from film/TV/music playing on Kodi
+# 5 - When the shopping list gets too long, it falls off the end, so need to implement some line wrapping
+# 6 - That's enough to be going on with thank you !
