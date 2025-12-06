@@ -10,6 +10,18 @@ substitutions:
   wake_word_triggered_sound_file: https://www.myinstants.com/media/sounds/sound-3_ARju4wR.mp3
   tts_voice_speed: "16000" # I'm using piper for jarvis voice and somewhere saw this is needed for piper
 
+color:
+  - id : orange
+    hex: FF6600
+  - id: sage_green
+    hex: B6D7A8
+  - id: white
+    hex: FFFFFF
+  - id: cyan 
+    hex: 00f4ff
+  - id: medium_gray
+    hex: a6a6a6
+
 
 esphome:
   name: m5stack-tab5-v2
