@@ -9,3 +9,6 @@ Note that none of the image files used (the background, the travel posters etc) 
 
 
 ![Page three](https://raw.githubusercontent.com/brewston/M5-Tab-ESPHome/main/20251205_170308.jpg)
+
+
+I managed to get the my driveway camera to display, see instructions in this post https://community.home-assistant.io/t/m5stack-tab5/888543/30?u=brewston
