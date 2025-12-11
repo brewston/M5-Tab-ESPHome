@@ -1,27 +1,30 @@
 # My M5 Tab5 code, heavily based on https://github.com/GinAndBacon/m5stack-m5tab-lvgl-esphome - huge kudos to the author for doing all the hard work :)
 
 
-
 substitutions:
   tv_vol_control: media_player.esphome_web_0bac48
   light_control: light.smart_multicolor_bulb
   pendant_control: light.office_pendant
    # Substitutions for audio files
   wake_word_triggered_sound_file: https://www.myinstants.com/media/sounds/sound-3_ARju4wR.mp3
-  tts_voice_speed: "16000" # I'm using piper for jarvis voice and somewhere saw this is needed for piper
+  tts_voice_speed: "16000"  # I'm using piper for jarvis voice and somewhere saw this is needed for piper
+
+web_server:
+  port: 80
 
 color:
   - id : orange
     hex: FF6600
   - id: sage_green
     hex: B6D7A8
+  - id: green
+    hex: 78f543
   - id: white
     hex: FFFFFF
   - id: cyan 
     hex: 00f4ff
   - id: medium_gray
     hex: a6a6a6
-
 
 esphome:
   name: m5stack-tab5-v2
@@ -33,7 +36,7 @@ esphome:
     board_upload.maximum_ram_size: 524288
     board_build.flash_size: 16MB
 
-api: # this bit is to show a teeny tiny wifi logo top right when connected to HA
+api:
   on_client_connected:
     - if:
         condition:
@@ -46,7 +49,81 @@ api: # this bit is to show a teeny tiny wifi logo top right when connected to HA
           lambda: 'return (0 == client_info.find("Home Assistant "));'
         then:
           - lvgl.widget.hide: lbl_hastatus
-
+  services:
+    - service: show_camera_snapshot
+      variables:
+        url: string
+      then:
+        - lambda: |-
+            // Clean up any previous image first
+            if (id(camera_overlay_obj) != nullptr) {
+              lv_obj_del(id(camera_overlay_obj));
+              id(camera_overlay_obj) = nullptr;
+            }
+            if (id(image_buffer) != nullptr) {
+              free(id(image_buffer));
+              id(image_buffer) = nullptr;
+            }
+            
+            ESP_LOGI("camera", "Fetching snapshot from: %s", url.c_str());
+            
+            #include "esp_http_client.h"
+            
+            esp_http_client_config_t config = {};
+            config.url = url.c_str();
+            config.timeout_ms = 10000;
+            
+            esp_http_client_handle_t client = esp_http_client_init(&config);
+            
+            ESP_LOGI("camera", "Opening HTTP connection...");
+            if (esp_http_client_open(client, 0) == ESP_OK) {
+              int content_length = esp_http_client_fetch_headers(client);
+              ESP_LOGI("camera", "Content length: %d bytes", content_length);
+              
+              if (content_length == 240000) {
+                id(image_buffer) = (uint8_t*)heap_caps_malloc(content_length, MALLOC_CAP_SPIRAM);
+                
+                ESP_LOGI("camera", "Buffer allocated: %p", id(image_buffer));
+                
+                if (id(image_buffer) != nullptr) {
+                  int read_len = esp_http_client_read(client, (char*)id(image_buffer), content_length);
+                  
+                  ESP_LOGI("camera", "Read %d bytes", read_len);
+                  
+                  if (read_len == 240000) {
+                    ESP_LOGI("camera", "Creating overlay...");
+                    
+                    // Create overlay and store reference
+                    id(camera_overlay_obj) = lv_obj_create(lv_scr_act());
+                    lv_obj_set_size(id(camera_overlay_obj), LV_PCT(100), LV_PCT(100));
+                    lv_obj_set_style_bg_color(id(camera_overlay_obj), lv_color_hex(0x000000), 0);
+                    lv_obj_set_style_bg_opa(id(camera_overlay_obj), LV_OPA_COVER, 0);
+                    lv_obj_clear_flag(id(camera_overlay_obj), LV_OBJ_FLAG_SCROLLABLE);
+                    
+                    // Create image
+                    lv_obj_t *img_obj = lv_img_create(id(camera_overlay_obj));
+                    
+                    static lv_img_dsc_t img_dsc;
+                    img_dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+                    img_dsc.header.always_zero = 0;
+                    img_dsc.header.reserved = 0;
+                    img_dsc.header.w = 400;
+                    img_dsc.header.h = 300;
+                    img_dsc.data_size = 240000;
+                    img_dsc.data = (uint8_t*)id(image_buffer);
+                    
+                    lv_img_set_src(img_obj, &img_dsc);
+                    lv_obj_align(img_obj, LV_ALIGN_CENTER, 0, 0);
+                    
+                    ESP_LOGI("camera", "Image displayed!");
+                    
+                    id(restore_display_timer).execute();
+                  }
+                }
+              }
+            }
+            esp_http_client_cleanup(client); 
+ 
 
 esp32:
   board: esp32-p4-evboard
@@ -117,6 +194,20 @@ external_components:
       components: [esp32]
       refresh: 1h
 
+http_request:
+  useragent: esphome/m5tab
+  timeout: 10s
+
+globals:
+  - id: image_buffer
+    type: uint8_t*
+    restore_value: no
+    initial_value: 'nullptr'
+  - id: camera_overlay_obj
+    type: lv_obj_t*
+    restore_value: no
+    initial_value: 'nullptr'
+
 network:
   enable_ipv6: false
 
@@ -148,7 +239,7 @@ pi4ioe5v6408:
     # 6: I - charging status
     # 7: O - charge enable
 
-font: # Came from one of my old projects, not used yet.
+font:
 
   - file: 'materialdesignicons-webfont.ttf'
     id: icon_font_30
@@ -176,6 +267,7 @@ font: # Came from one of my old projects, not used yet.
       - "\U000F0583" # Walking
       - "\U000F0A44" # Dog
       - "\U000F0098" # Beer
+      
 
 
 
@@ -333,13 +425,55 @@ binary_sensor: #Some sensors from HA, not using the TV one at the moment.
     pin:
       pi4ioe5v6408: pi4ioe1
       number: 7
+text_sensor:
 
-text_sensor: # More HA sensors, the shopping one  is a command line sensor in HA and looks like this :
+  - platform: homeassistant
+    name: forecast
+    id: conditionswd
+    entity_id: weather.pirateweather
+    internal: true
+    on_value:
+      - lambda: |-
+          // Helper function to convert ESPHome Color to LVGL color
+          auto esp_to_lv = [](esphome::Color c) {
+            return lv_color_make(c.r, c.g, c.b);
+          };
+          std::string condition = id(conditionswd).state;
+          const char* icon = "\U000F0590"; // Default to cloudy
+          
+          if (condition == "clear-night") {
+            icon = "\U000F0594"; // Night Time Clear
+          } else if (condition == "cloudy") {
+            icon = "\U000F0590"; // Cloudy
+          } else if (condition == "fog") {
+            icon = "\U000F0591"; // Fog
+          } else if (condition == "hail" || condition == "sleet") {
+            icon = "\U000F067F"; // Sleet
+          } else if (condition == "lightning" || condition == "lightning-rainy") {
+            icon = "\U000F0593"; // Lightning (if you have it)
+          } else if (condition == "partlycloudy") {
+            icon = "\U000F0595"; // Partly Cloudy
+          } else if (condition == "pouring" || condition == "rainy") {
+            icon = "\U000F0596"; // Raining
+          } else if (condition == "snowy" || condition == "snowy-rainy") {
+            icon = "\U000F0F36"; // Snowing
+          } else if (condition == "sunny") {
+            icon = "\U000F0599"; // Sunny/Dry
+          } else if (condition == "windy" || condition == "exceptional") {
+            icon = "\U000F0F30"; // Haze
+          }
+          
+          // Update your LVGL label with the icon
+          lv_label_set_text(id(weather_icon_label), icon);
+          lv_obj_set_style_text_color(id(weather_icon_label), esp_to_lv(id(cyan)), LV_PART_MAIN);
+
+# More HA sensors, the shopping one  is a command line sensor in HA and looks like this :
 # - sensor:
 #     name: "Items in shopping list"
 #     command: "jq '[.[] | select(.complete==false) | .name]' .shopping_list.json"
 #     value_template: "{{ value_json | map('string') | join(',') }}"
 #     scan_interval: 1
+
 
   - platform: homeassistant
     id: shopping
@@ -351,20 +485,27 @@ text_sensor: # More HA sensors, the shopping one  is a command line sensor in HA
               return (id(shopping).state).c_str();
 
 # sensor for my central heating and the logo changes colour when the heating is on.
+
+
   - platform: homeassistant
     id: climate_action
     entity_id: climate.hallway
     attribute: hvac_action
     on_value:
       - lambda: |-
-          std::string action = id(climate_action).state;
+         // Helper function to convert ESPHome Color to LVGL color
+          auto esp_to_lv = [](esphome::Color c) {
+            return lv_color_make(c.r, c.g, c.b);
+          };
 
+          std::string action = id(climate_action).state;
+          
           if (action == "heating") {
             lv_obj_set_style_img_recolor_opa(id(hive_img), LV_OPA_70, LV_PART_MAIN);
-            lv_obj_set_style_img_recolor(id(hive_img), lv_color_hex(0xFF6600), LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(hive_img), esp_to_lv(id(orange)), LV_PART_MAIN);
           }  else if (action == "idle") {
             lv_obj_set_style_img_recolor_opa(id(hive_img), LV_OPA_70, LV_PART_MAIN);
-            lv_obj_set_style_img_recolor(id(hive_img), lv_color_hex(0xb6d7a8), LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(hive_img), esp_to_lv(id(green)), LV_PART_MAIN);
           } else {
             lv_obj_set_style_img_recolor_opa(id(hive_img), LV_OPA_TRANSP, LV_PART_MAIN);
           }
@@ -373,23 +514,27 @@ text_sensor: # More HA sensors, the shopping one  is a command line sensor in HA
 
   - platform: homeassistant
     id: water_boiler_operation_mode
-    entity_id: water_heater.hallway
-    attribute: operation_mode
+    entity_id: binary_sensor.hotwater_state
+    #attribute: operation_mode 
     on_value:
       - lambda: |-
+          // Helper function to convert ESPHome Color to LVGL color
+          auto esp_to_lv = [](esphome::Color c) {
+            return lv_color_make(c.r, c.g, c.b);
+          };
+          
           std::string action = id(water_boiler_operation_mode).state;
-
+          
           if (action == "on") {
             lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_70, LV_PART_MAIN);
-            lv_obj_set_style_img_recolor(id(boiler_img), lv_color_hex(0xFF6600), LV_PART_MAIN);
-          }  else if (action == "off") {
+            lv_obj_set_style_img_recolor(id(boiler_img), esp_to_lv(id(orange)), LV_PART_MAIN);
+          } else if (action == "off") {
             lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_70, LV_PART_MAIN);
-            lv_obj_set_style_img_recolor(id(boiler_img), lv_color_hex(0xb6d7a8), LV_PART_MAIN);
+            lv_obj_set_style_img_recolor(id(boiler_img), esp_to_lv(id(green)), LV_PART_MAIN);
           } else {
             lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_TRANSP, LV_PART_MAIN);
           }
-
-
+    
 sensor:
   - platform: ina226
     address: 0x41
@@ -416,10 +561,7 @@ sensor:
           value: !lambda return x;
 
 
-  - platform: homeassistant
-    id: volume_level
-    entity_id: $tv_vol_control
-    attribute: volume_level
+
 
   - platform: homeassistant
     id: light_state
@@ -450,8 +592,8 @@ time:
         then:
           - script.execute: time_update
 
-# this it the antiburn schedule previously mentioned.
-
+ # this it the antiburn schedule previously mentioned.
+         
   - platform: homeassistant
     id: ha_time
     on_time:
@@ -574,6 +716,7 @@ light:
 
 # First you need to define all the images you want to use. There are located in the images directory with config/esphome on my HA server.
 
+
 image:
 
   - file: "images/hive_96.png"
@@ -585,7 +728,7 @@ image:
   - file: "images/blank.png"
     id: blank_img
     type: RGB565
-
+   
 
   - file: "original.jpeg"
     id: jarvis
@@ -593,7 +736,8 @@ image:
     type: RGB565
     byte_order: little_endian
 
-# Definition for MDI icons. GinAndBacon did a neat thing to animate them with a slightly smaller logo, hence 2 definition of the same icon,
+ # Definition for MDI icons. GinAndBacon did a neat thing to animate them with a slightly smaller logo, hence 2 definition of the same icon,
+
 
   - file: mdi:kodi
     id: kodi_icon
@@ -614,7 +758,7 @@ image:
     resize: 70x70
 
 
-
+ 
 
 
 
@@ -625,7 +769,7 @@ image:
     resize: 150x150
     transparency: alpha_channel
     byte_order: little_endian
-
+    
 
 
 
@@ -638,6 +782,13 @@ image:
 
 # These are little travel poster images, which change randomly every 5 mins. You can use whatever really
 
+  - file: "images/athens.png"
+    id: athens
+    type: RGB565
+    resize: 213x355
+    transparency: alpha_channel
+    byte_order: little_endian
+
   - file: "images/Budapest.png"
     id: budapest
     type: RGB565
@@ -645,7 +796,7 @@ image:
     transparency: alpha_channel
     byte_order: little_endian
 
-  - file: "images/LosAngeles.png"
+  - file: "images/los_angeles.png"
     id: los_angeles
     type: RGB565
     resize: 213x355
@@ -807,28 +958,35 @@ interval:
           // Pick a random image
           const lv_img_dsc_t* imgs[] = {
             id(budapest).get_lv_img_dsc(),
+            id(athens).get_lv_img_dsc(),
             id(rio).get_lv_img_dsc(),
             id(los_angeles).get_lv_img_dsc(),
             id(san_diego).get_lv_img_dsc(),
             id(seville).get_lv_img_dsc(),
             id(venice).get_lv_img_dsc(),
-            id(new_york).get_lv_img_dsc(),
-            id(boston).get_lv_img_dsc(),
             id(tenerife).get_lv_img_dsc(),
             id(bangkok).get_lv_img_dsc(),
-            id(berlin).get_lv_img_dsc(),
             id(lima).get_lv_img_dsc(),
             id(santiago).get_lv_img_dsc(),
             id(marrakech).get_lv_img_dsc()
           };
-          int r = esp_random() % 14;
-          lv_img_set_src(id(random_img), imgs[r]);
-
+          const char* img_names[] = {
+            "budapest", "athens", "rio", "los_angeles", "san_diego", 
+            "seville", "venice", "tenerife", "bangkok", "lima", 
+            "santiago", "marrakech"
+          };
+          
+          int num_images = 12;  // Changed from 14 to 12
+          int r = esp_random() % num_images;
+          
+          ESP_LOGD("travel", "Changing to image %d: %s", r, img_names[r]);
+          
+          lv_img_set_src(id(travel_img), imgs[r]);
 
 lvgl:
   buffer_size: 100%
   byte_order: little_endian
-
+ 
 # this bit is from the original code which turns the backlight off based on display_timeout value, I just turn mine off at the end work day and back on the next day.
 
   #on_idle:
@@ -842,44 +1000,18 @@ lvgl:
 
 
 # so the top layer has some bits which will show on every page. There's the HA connected icon and some navigation buttons (which i dont use as i've implemented swipe between screens)
+
   top_layer:
     widgets:
       - label:
-          text: "\uF1EB"
+          text: "\uF015"
           id: lbl_hastatus
           hidden: true
           align: top_right
           x: -20
           y: 20
           text_align: right
-          text_color: 0xFFFFFF
-      - buttonmatrix:
-          align: bottom_mid
-          styles: header_footer
-          pad_all: 0
-          outline_opa: 70%
-          outline_width: 4
-          outline_color: 0xffffff
-          id: top_layer
-          items:
-            styles: header_footer
-          rows:
-            - buttons:
-              - id: page_prev
-                text: "\uF053"
-                on_press:
-                  then:
-                    lvgl.page.previous:
-              - id: page_home
-                text: "\uF015"
-                on_press:
-                  then:
-                    lvgl.page.show: coverpage
-              - id: page_next
-                text: "\uF054"
-                on_press:
-                  then:
-                    lvgl.page.next:
+          text_color: cyan
 
   displays:
     - my_lcd
@@ -887,6 +1019,7 @@ lvgl:
     - my_touchscreen
 
 # Page definitions, each one has the swipe control
+
   pages:
     - id: coverpage
       on_swipe_left:
@@ -902,7 +1035,15 @@ lvgl:
      # pad_right: 30
 
 # Note that the widgets are in any particular order and certainly don't relate to the layout on the screen (sorry)
+
       widgets:
+      - label: # weather icon
+         id: weather_icon_label
+         text: "\U000F0590"  # Default icon
+         align: CENTER
+         text_font: conditions
+         y: 215
+         x: -395
       - image: # Hive logo
           id: hive_img
           src: hive_icon
@@ -916,10 +1057,10 @@ lvgl:
           y: 215
           x: -200
           align: CENTER
-
-      - image: # random travel poster
-             id: random_img
-             src: berlin # need to start with one of them
+   
+      - image: # random destination poster
+             id: travel_img
+             src: budapest
              x: 1025
              y: 10
              radius: 11
@@ -933,7 +1074,7 @@ lvgl:
             id: shopping_list
             text_font: robotosm
             recolor: true
-            text_color: 0x00f4ff
+            text_color: cyan
 
 
 
@@ -963,12 +1104,12 @@ lvgl:
                         width: 1
                         count: 61
                         length: 10
-                        color: 0xffffff
+                        color: white
                       indicators:
                         - line:
                             id: minute_hand
                             width: 3
-                            color: 0xa6a6a6
+                            color: medium_gray
                             r_mod: -4
                             value: 0
                     - range_from: 1 # hours scale for labels
@@ -983,7 +1124,7 @@ lvgl:
                           stride: 1
                           width: 4
                           length: 10
-                          color: 0x00f4ff
+                          color: cyan
                           label_gap: 12
                     - range_from: 0 # hi-res hours scale for hand
                       range_to: 720
@@ -995,7 +1136,7 @@ lvgl:
                         - line:
                             id: hour_hand
                             width: 5
-                            color: 0x00f4ff
+                            color: cyan
                             r_mod: -30
                             value: 0
 
@@ -1007,7 +1148,7 @@ lvgl:
             id: slider_id2
             bg_opa: 70%
             border_width: 3
-            line_color: 0xffffff
+            line_color: white
             bg_grad_color: 0xf0e0a1
             bg_grad_dir: HOR
             border_opa: 90%
@@ -1016,7 +1157,7 @@ lvgl:
             bg_image_recolor_opa: 70%
             bg_image_recolor: 0x7cb342
             outline_width: 1
-            outline_color: 0xffffff
+            outline_color: white
             bg_color: 0x7cb342
             pad_all: 0
             value: 0
@@ -1028,7 +1169,7 @@ lvgl:
                 width: 1
               #  align: CENTER
                 height: 100%
-                bg_color: 0xffffff
+                bg_color: white
             #    bg_color_opa: 95%
                 bg_opa: COVER
                 pad_top: 4
@@ -1041,7 +1182,7 @@ lvgl:
                 width: 1
                 #align: CENTER
                 bg_grad_color: 0xf1e0f0
-           #     bg_grad_color: 0xffffff
+           #     bg_grad_color: white
                 bg_grad_dir: HOR
                 height: 100%
                 pad_top: 4
@@ -1079,12 +1220,12 @@ lvgl:
             id: light_btn
             width: 150
             height: 150
-            bg_color: 0xffffff
+            bg_color: white
             bg_opa: TRANSP
             bg_image_recolor_opa: COVER
             outline_width: 4
             outline_opa: 70%
-            outline_color: 0xffffff
+            outline_color: white
             align: CENTER
             bg_image_opa: 10%
            # checkable: true
@@ -1113,7 +1254,7 @@ lvgl:
                   image_recolor: 0x4dd0e1
                   auto_start: false
             pressed: # set some button colors to be different in pressed state
-              bg_color: 0xffffff
+              bg_color: white
               bg_grad_color: 0x00334d
               bg_grad_dir: HOR
               bg_opa: 90%
@@ -1145,12 +1286,12 @@ lvgl:
             x: 175
             width: 150
             height: 150
-            bg_color: 0xffffff
+            bg_color: white
             bg_opa: TRANSP
             bg_image_recolor_opa: COVER
             outline_width: 4
             outline_opa: 70%
-            outline_color: 0xffffff
+            outline_color: white
             align: CENTER
             bg_image_opa: 10%
             widgets:
@@ -1178,7 +1319,7 @@ lvgl:
                   image_recolor: 0x4dd0e1
                   auto_start: false
             pressed: # set some button colors to be different in pressed state
-              bg_color: 0xffffff
+              bg_color: white
               bg_grad_color: 0x00334d
               bg_grad_dir: HOR
               bg_opa: 90%
@@ -1207,7 +1348,7 @@ lvgl:
             x: 203
             width: 150
             height: 150
-            bg_color: 0xffffff
+            bg_color: white
             bg_opa: 0%
             bg_image_recolor_opa: COVER
             outline_width: 0
@@ -1223,11 +1364,11 @@ lvgl:
                bg_opa: COVER
                outline_width: 8
                outline_opa: COVER
-               outline_color: 0xffffff
+               outline_color: white
                image_recolor_opa: 95%
                image_recolor: 0x000000
                bg_image_opa: COVER
-               bg_image_recolor: 0xffffff
+               bg_image_recolor: white
             on_short_click:
               - homeassistant.service:
                   action: media_player.volume_mute
@@ -1250,7 +1391,7 @@ lvgl:
                       - voice_assistant.stop:
 
 
-# second page needs more work, just has some random stuff I'm testing.
+
     - id: second_page
       on_swipe_left:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
@@ -1266,7 +1407,7 @@ lvgl:
             x: 250
             width: 300
             height: 300
-            bg_color: 0xffffff
+            bg_color: white
             bg_opa: 0%
             bg_image_recolor_opa: COVER
             outline_width: 0
@@ -1279,7 +1420,7 @@ lvgl:
                   src: green_strat
 
         - label:
-            # thermostat control but I'm not happy with it, hence being relegated here :)
+
             id: internal_temp_display
             text_font: roboto
             text_color: 0x2abbbb
@@ -1350,7 +1491,7 @@ lvgl:
 
 
 
-# Example grid layout with 5 travel posters
+# Example grid layout
     - id: third_page
       on_swipe_left:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
@@ -1369,7 +1510,7 @@ lvgl:
       - image:
          x: 216
          y: 3
-         src: marrakech
+         src: lima
          radius: 11
          clip_corner: true
       - image:
@@ -1387,22 +1528,22 @@ lvgl:
       - image:
          x: 845
          y: 3
-         src: new_york
+         src: athens
          radius: 11
          clip_corner: true
       - image:
          x: 1058
          y: 3
-         src: berlin
+         src: los_angeles
          radius: 11
          clip_corner: true
 
 
   style_definitions:
     - id: header_footer
-      bg_color: 0xffffff
+      bg_color: white
       #bg_color: 0x2F8CD8
-      bg_grad_color: 0xffffff
+      bg_grad_color: white
       bg_grad_dir: VER
       bg_opa: TRANSP
       outline_width: 3
@@ -1410,14 +1551,12 @@ lvgl:
       pad_all: 0
       pad_row: 0
       pad_column: 0
-      border_color: 0xffffff
-      text_color: 0xffffff
-      line_color: 0xffffff
+      border_color: white
+      text_color: white
+      line_color: white
       width: 100%
       height: 40
 
-
-# Lots of code here taken, unchanged from GinAndBacon's repo
 
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
 select:
@@ -1626,8 +1765,6 @@ script:
             id(external_media_player)
               ->play_file(sound_file, true, false);
           }
-
-# code to move the clocks hands - seriously, you have to do it all yourself LOL.
   - id: time_update
     then:
       - lvgl.indicator.update:
@@ -1639,6 +1776,26 @@ script:
           value: !lambda |-
             auto now = id(time_comp).now();
             return std::fmod(now.hour, 12) * 60 + now.minute;
+
+
+  - id: restore_display_timer
+    then:
+      - delay: 5s
+      - lambda: |-
+          ESP_LOGI("camera", "Hiding camera image");
+          
+          if (id(camera_overlay_obj) != nullptr) {
+            lv_obj_del(id(camera_overlay_obj));
+            id(camera_overlay_obj) = nullptr;
+          }
+          
+          if (id(image_buffer) != nullptr) {
+            free(id(image_buffer));
+            id(image_buffer) = nullptr;
+          }
+          
+          ESP_LOGI("camera", "Cleanup complete"); 
+
 
 # TODO - if you've read this far, here's what else I'd like to add :
 # 1 - Aninmate the jarvis logo based on voice assistant activity
