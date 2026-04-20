@@ -12,9 +12,38 @@ substitutions:
 web_server:
   port: 80
 
+
+globals:
+  - id: image_buffer
+    type: uint8_t*
+    restore_value: no
+    initial_value: 'nullptr'
+  - id: camera_overlay_obj
+    type: lv_obj_t*
+    restore_value: no
+    initial_value: 'nullptr'
+  - id: artwork_buffer
+    type: uint8_t*
+    restore_value: no
+    initial_value: 'nullptr'
+  - id: light_r
+    type: uint8_t
+    restore_value: no
+    initial_value: '0xFF'
+  - id: light_g
+    type: uint8_t
+    restore_value: no
+    initial_value: '0xFF'
+  - id: light_b
+    type: uint8_t
+    restore_value: no
+    initial_value: '0xFF'
+
 color:
   - id : orange
     hex: FF6600
+  - id : red
+    hex: FF0000
   - id: sage_green
     hex: B6D7A8
   - id: green
@@ -35,6 +64,10 @@ esphome:
     board_build.flash_mode: dio
     board_upload.maximum_ram_size: 524288
     board_build.flash_size: 16MB
+  includes:
+    - <driver/sdspi_host.h>
+    - <driver/spi_common.h>
+    - <sdmmc_cmd.h>
 
 api:
   on_client_connected:
@@ -104,9 +137,9 @@ api:
                     lv_obj_t *img_obj = lv_img_create(id(camera_overlay_obj));
                     
                     static lv_img_dsc_t img_dsc;
-                    img_dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
-                    img_dsc.header.always_zero = 0;
-                    img_dsc.header.reserved = 0;
+                    img_dsc.header.cf = LV_COLOR_FORMAT_NATIVE;
+                    
+                    
                     img_dsc.header.w = 400;
                     img_dsc.header.h = 300;
                     img_dsc.data_size = 240000;
@@ -123,7 +156,64 @@ api:
               }
             }
             esp_http_client_cleanup(client); 
- 
+    - service: show_media_artwork
+      variables:
+        url: string
+      then:
+        - lambda: |-
+            // Clean up previous artwork
+            if (id(artwork_buffer) != nullptr) {
+              free(id(artwork_buffer));
+              id(artwork_buffer) = nullptr;
+            }
+            
+            ESP_LOGI("media", "Fetching artwork from: %s", url.c_str());
+            
+            esp_http_client_config_t config = {};
+            config.url = url.c_str();
+            config.timeout_ms = 10000;
+            
+            esp_http_client_handle_t client = esp_http_client_init(&config);
+            
+            if (esp_http_client_open(client, 0) == ESP_OK) {
+              int content_length = esp_http_client_fetch_headers(client);
+              ESP_LOGI("media", "Artwork size: %d bytes", content_length);
+              
+              if (content_length > 0 && content_length <= 500000) {
+                id(artwork_buffer) = (uint8_t*)heap_caps_malloc(content_length, MALLOC_CAP_SPIRAM);
+                
+                if (id(artwork_buffer) != nullptr) {
+                  int read_len = esp_http_client_read(client, (char*)id(artwork_buffer), content_length);
+                  
+                  if (read_len > 0) {
+                    ESP_LOGI("media", "Downloaded %d bytes", read_len);
+                    
+                    // Clear previous artwork in container
+                    lv_obj_clean(id(artwork_container));
+                    
+                    // Create image in artwork container
+                    lv_obj_t *artwork_img = lv_img_create(id(artwork_container));
+                    
+                    // Setup image descriptor (320x320 RGB565)
+                    static lv_img_dsc_t artwork_dsc;
+                    artwork_dsc.header.cf = LV_COLOR_FORMAT_NATIVE;
+                    
+                    
+                    artwork_dsc.header.w = 320;
+                    artwork_dsc.header.h = 320;
+                    artwork_dsc.data_size = read_len;
+                    artwork_dsc.data = id(artwork_buffer);
+                    
+                    lv_img_set_src(artwork_img, &artwork_dsc);
+                    lv_obj_align(artwork_img, LV_ALIGN_CENTER, 0, 0);
+                    
+                    ESP_LOGI("media", "Artwork displayed");
+                  }
+                }
+              }
+            }
+            esp_http_client_cleanup(client);
+  
 
 esp32:
   board: esp32-p4-evboard
@@ -180,6 +270,7 @@ psram:
 
 
 
+
 ota:
   - platform: esphome
     id: ota_esphome
@@ -189,24 +280,16 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
-external_components:
-    - source: github://pr#12127
-      components: [esp32]
-      refresh: 1h
+#external_components:
+#    - source: github://pr#12127
+#      components: [esp32]
+#      refresh: 1h
 
 http_request:
   useragent: esphome/m5tab
   timeout: 10s
 
-globals:
-  - id: image_buffer
-    type: uint8_t*
-    restore_value: no
-    initial_value: 'nullptr'
-  - id: camera_overlay_obj
-    type: lv_obj_t*
-    restore_value: no
-    initial_value: 'nullptr'
+
 
 network:
   enable_ipv6: false
@@ -240,37 +323,6 @@ pi4ioe5v6408:
     # 7: O - charge enable
 
 font:
-
-  - file: 'materialdesignicons-webfont.ttf'
-    id: icon_font_30
-    size: 30
-    glyphs:
-      - "\U000F050F" # Temp
-      - "\U000F029A" # Pressure
-      - "\U000F15FA" # Wind
-      - "\U000F058C" # Rain
-      - "\U000F0643" # Man home
-      - "\U000F0B96" # Man away
-      - "\U000F1077" # Woman home
-      - "\U000F1078" # Woman away
-      - "\U000F0828" # Hot Tub
-      - "\U000F0504" # Big Celcius
-      - "\U000F0438" # Radiator On
-      - "\U000F0AD7" # Radiator Off
-      - "\U000F0F92" # Boiler on
-      - "\U000F11B4" # Boiler off
-      - "\U000F02DC" # House
-      - "\U000F0595" # Outside
-      - "\U000F0474" # School
-      - "\U000F00A3" # Bike
-      - "\U000F0111" # Shopping
-      - "\U000F0583" # Walking
-      - "\U000F0A44" # Dog
-      - "\U000F0098" # Beer
-      
-
-
-
   - file: 'materialdesignicons-webfont.ttf'
     id: conditions
     size: 70
@@ -292,7 +344,7 @@ font:
     id: roboto
     size: 70
     glyphs:
-      ['&', '@', '!', ',', '.', '"', '%', '+', '-', '_', ':', '°', '0',
+      ['&', '@', '!', ',', '.', '"', '%', '+', '-', '_', '$',':', '°', '0',
         '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
         'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
         'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
@@ -306,9 +358,15 @@ font:
       ['&', '@', '!', ',', '.', '"', '%', '+', '-', '_', ':', '°', '0',
         '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
         'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
-        'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+        'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e','é', 'f',
         'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
         'u', 'v', 'w', 'x', 'y', 'z', '/', 'è']
+
+
+
+
+
+
 switch:
   - platform: gpio
     id: wifi_power
@@ -391,6 +449,8 @@ switch:
             - lvgl.widget.redraw:
 binary_sensor: #Some sensors from HA, not using the TV one at the moment.
 
+
+
   - platform: homeassistant
     id: tv_r
     entity_id: media_player.samsung_tv
@@ -425,7 +485,88 @@ binary_sensor: #Some sensors from HA, not using the TV one at the moment.
     pin:
       pi4ioe5v6408: pi4ioe1
       number: 7
+
+
+
 text_sensor:
+
+  - platform: homeassistant
+    id: thermostat_hvac_mode
+    entity_id: climate.hallway
+    
+  - platform: homeassistant
+    id: thermostat_preset
+    entity_id: climate.hallway
+    attribute: preset_mode
+
+  - platform: homeassistant
+    id: media_player_state
+    entity_id: media_player.jarvis_lounge_media_player
+    on_value:
+      then:
+        - lambda: |-
+            std::string state = id(media_player_state).state;
+            ESP_LOGI("media", "Media player state: %s", state.c_str());
+            
+            if (state == "playing") {
+              lv_obj_clear_flag(id(media_card), LV_OBJ_FLAG_HIDDEN);
+            } else if (state == "paused") {
+              // Keep visible when paused
+              lv_obj_clear_flag(id(media_card), LV_OBJ_FLAG_HIDDEN);
+            } else {
+              // Hide when idle/off
+              lv_obj_add_flag(id(media_card), LV_OBJ_FLAG_HIDDEN);
+            }
+
+  - platform: homeassistant
+    id: media_title
+    entity_id: media_player.jarvis_lounge_media_player  # Change to your media player
+    attribute: media_title
+    on_value:
+      then:
+        - lambda: |-
+            if (id(media_title).state.length() > 0) {
+              lv_label_set_text(id(media_title_label), id(media_title).state.c_str());
+              lv_obj_clear_flag(id(media_card), LV_OBJ_FLAG_HIDDEN);
+            }
+            
+  - platform: homeassistant
+    id: media_artist
+    entity_id: media_player.jarvis_lounge_media_player
+    attribute: media_artist
+    on_value:
+      then:
+        - lambda: |-
+            if (id(media_artist).state.length() > 0) {
+              lv_label_set_text(id(media_artist_label), id(media_artist).state.c_str());
+            }
+            
+  - platform: homeassistant
+    id: media_album
+    entity_id: media_player.jarvis_lounge_media_player
+    attribute: media_album
+    on_value:
+      then:
+        - lambda: |-
+            if (id(media_album).state.length() > 0) {
+              lv_label_set_text(id(media_album_label), id(media_album).state.c_str());
+            }
+            
+  - platform: homeassistant
+    id: media_artwork_url
+    entity_id: media_player.jarvis_lounge_media_player
+    attribute: entity_picture
+    on_value:
+      then:
+        - lambda: |-
+            if (id(media_artwork_url).state.length() > 0) {
+              // Build full URL
+              std::string full_url = "http://192.168.0.7:8123" + id(media_artwork_url).state;
+              ESP_LOGI("media", "New artwork URL: %s", full_url.c_str());
+              
+              // Trigger artwork download via Home Assistant automation
+              // Or call service directly here
+            }
 
   - platform: homeassistant
     name: forecast
@@ -467,6 +608,20 @@ text_sensor:
           lv_label_set_text(id(weather_icon_label), icon);
           lv_obj_set_style_text_color(id(weather_icon_label), esp_to_lv(id(cyan)), LV_PART_MAIN);
 
+  - platform: homeassistant
+    id: speaker_state
+    entity_id: media_player.external_media_player
+    on_value:
+      then:
+        - if:
+            condition:
+              text_sensor.state:
+                id: speaker_state
+                state: "playing"
+            then:
+              - lvgl.animimg.start: anim_id8
+            else:
+              - lvgl.animimg.stop: anim_id8    
 # More HA sensors, the shopping one  is a command line sensor in HA and looks like this :
 # - sensor:
 #     name: "Items in shopping list"
@@ -534,7 +689,36 @@ text_sensor:
           } else {
             lv_obj_set_style_img_recolor_opa(id(boiler_img), LV_OPA_TRANSP, LV_PART_MAIN);
           }
-    
+  - platform: homeassistant
+    id: oracle_price
+    entity_id: sensor.oracle_2
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGD("oracle", "Price updated: %s", x.c_str());
+            std::string s = x;
+            lv_label_set_text(id(oracle_price_label), s.c_str());
+  - platform: homeassistant
+    id: oracle_change
+    entity_id: sensor.orcl_change   
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGD("oracle", "Change direction: %s", x.c_str());
+            
+            if (x == "Up") {
+              lv_obj_set_style_text_color(id(oracle_price_label), 
+                lv_color_make(id(sage_green).r, id(sage_green).g, id(green).b), 
+                LV_PART_MAIN);
+            } else if (x == "Down") {
+              lv_obj_set_style_text_color(id(oracle_price_label), 
+                lv_color_make(id(orange).r, id(orange).g, id(red).b), 
+                LV_PART_MAIN);
+            } else {
+              lv_obj_set_style_text_color(id(oracle_price_label), 
+                lv_color_make(id(white).r, id(white).g, id(white).b), 
+                LV_PART_MAIN);
+            }
 sensor:
   - platform: ina226
     address: 0x41
@@ -551,14 +735,14 @@ sensor:
 
 
   - platform: homeassistant
-    id: light_slider
+    id: lamp_slider
     entity_id: $light_control
     attribute: brightness
     on_value:
       then:
-      - lvgl.slider.update:
-          id: slider_id2
-          value: !lambda return x;
+       - lvgl.slider.update:
+           id: slider_id2
+           value: !lambda return x;
 
 
 
@@ -568,16 +752,27 @@ sensor:
     entity_id: $light_control
     attribute: brightness
 
+
+
   - platform: homeassistant
-    id: room_thermostat
+    id: thermostat_current_temp
+    entity_id: climate.hallway
+    attribute: current_temperature
+    on_value:
+      - lambda: |-
+          char temp_str[10];
+          snprintf(temp_str, sizeof(temp_str), "%.1f°", x);
+          lv_label_set_text(id(current_temp_label), temp_str);
+    
+  - platform: homeassistant
+    id: thermostat_target_temp
     entity_id: climate.hallway
     attribute: temperature
     on_value:
-      - lvgl.spinbox.update:
-          id: spinbox_id
-          value: !lambda return x;
-
-
+      - lambda: |-
+          char temp_str[10];
+          snprintf(temp_str, sizeof(temp_str), "%.1f°", x);
+          lv_label_set_text(id(target_temp_label), temp_str);
 
 
 
@@ -696,7 +891,6 @@ display:
       pi4ioe5v6408: pi4ioe1
       number: 4
    # show_test_card: true
-    rotation: 270
 
 output:
   - platform: ledc
@@ -763,38 +957,28 @@ image:
 
 
 
-  - file: "replying.png"
-    id: jarvis_round
+  - file: "replying_circle.png"
+    id: replying_round
     type: RGB565
     resize: 150x150
     transparency: alpha_channel
     byte_order: little_endian
     
-
-
-
-  - file: "images/green_strat.png"
-    id: green_strat
+  - file: "idle_circle.png"
+    id: idle_round
     type: RGB565
-    resize: 300x300
+    resize: 150x150
     transparency: alpha_channel
     byte_order: little_endian
+
+
+
 
 # These are little travel poster images, which change randomly every 5 mins. You can use whatever really
 
-  - file: "images/athens.png"
-    id: athens
-    type: RGB565
-    resize: 213x355
-    transparency: alpha_channel
-    byte_order: little_endian
 
-  - file: "images/Budapest.png"
-    id: budapest
-    type: RGB565
-    resize: 213x355
-    transparency: alpha_channel
-    byte_order: little_endian
+
+
 
   - file: "images/los_angeles.png"
     id: los_angeles
@@ -957,35 +1141,42 @@ interval:
       - lambda: |-
           // Pick a random image
           const lv_img_dsc_t* imgs[] = {
-            id(budapest).get_lv_img_dsc(),
-            id(athens).get_lv_img_dsc(),
-            id(rio).get_lv_img_dsc(),
-            id(los_angeles).get_lv_img_dsc(),
-            id(san_diego).get_lv_img_dsc(),
-            id(seville).get_lv_img_dsc(),
-            id(venice).get_lv_img_dsc(),
-            id(tenerife).get_lv_img_dsc(),
-            id(bangkok).get_lv_img_dsc(),
-            id(lima).get_lv_img_dsc(),
-            id(santiago).get_lv_img_dsc(),
-            id(marrakech).get_lv_img_dsc()
+            id(rio).get_lv_image_dsc(),
+            id(los_angeles).get_lv_image_dsc(),
+            id(san_diego).get_lv_image_dsc(),
+            id(seville).get_lv_image_dsc(),
+            id(venice).get_lv_image_dsc(),
+            id(tenerife).get_lv_image_dsc(),
+            id(bangkok).get_lv_image_dsc(),
+            id(lima).get_lv_image_dsc(),
+            id(santiago).get_lv_image_dsc(),
+            id(marrakech).get_lv_image_dsc()
           };
           const char* img_names[] = {
-            "budapest", "athens", "rio", "los_angeles", "san_diego", 
+            "rio", "los_angeles", "san_diego", 
             "seville", "venice", "tenerife", "bangkok", "lima", 
             "santiago", "marrakech"
           };
           
-          int num_images = 12;  // Changed from 14 to 12
+          int num_images = 10;  
           int r = esp_random() % num_images;
           
           ESP_LOGD("travel", "Changing to image %d: %s", r, img_names[r]);
           
           lv_img_set_src(id(travel_img), imgs[r]);
+  #- interval: 5s   # every 5 seconds (adjust as needed)
+  #  then:
+  #    - logger.log:
+  #        format: "Oracle price sensor value: %s"
+  #        args:
+  #          - id(oracle_price).state.c_str()
+
+
 
 lvgl:
   buffer_size: 100%
   byte_order: little_endian
+  rotation: 270
  
 # this bit is from the original code which turns the backlight off based on display_timeout value, I just turn mine off at the end work day and back on the next day.
 
@@ -1013,8 +1204,8 @@ lvgl:
           text_align: right
           text_color: cyan
 
-  displays:
-    - my_lcd
+      
+
   touchscreens:
     - my_touchscreen
 
@@ -1029,14 +1220,20 @@ lvgl:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
         - lvgl.page.previous:
       bg_image_src: jarvis
+      on_load:
+        - lvgl.animimg.stop: anim_id8
      # bg_color: 0x5f6160
      # mode: REAL
      # border_width: 30
      # pad_right: 30
 
-# Note that the widgets are in any particular order and certainly don't relate to the layout on the screen (sorry)
+      # Note that the widgets are in any particular order and certainly don't relate to the layout on the screen (sorry)
 
       widgets:
+
+ 
+ 
+
       - label: # weather icon
          id: weather_icon_label
          text: "\U000F0590"  # Default icon
@@ -1050,6 +1247,10 @@ lvgl:
           y: 215
           x: -123
           align: CENTER
+          on_click:
+             - lambda: |-
+                lv_obj_clear_flag(id(thermostat_popup), LV_OBJ_FLAG_HIDDEN);
+                lv_obj_move_foreground(id(thermostat_popup));  
 
       - image: # water boiler
           id: boiler_img
@@ -1060,7 +1261,7 @@ lvgl:
    
       - image: # random destination poster
              id: travel_img
-             src: budapest
+             src: venice
              x: 1025
              y: 10
              radius: 11
@@ -1130,8 +1331,7 @@ lvgl:
                       range_to: 720
                       angle_range: 360
                       rotation: 270
-                      ticks:
-                        count: 0
+
                       indicators:
                         - line:
                             id: hour_hand
@@ -1140,73 +1340,18 @@ lvgl:
                             r_mod: -30
                             value: 0
 
-      - slider: # office lamp slider
-            x: 35
-            y: 30
-            width: 660
-            height: 75
-            id: slider_id2
-            bg_opa: 70%
-            border_width: 3
-            line_color: white
-            bg_grad_color: 0xf0e0a1
-            bg_grad_dir: HOR
-            border_opa: 90%
-            image_recolor_opa: 30%
-            border_color: 0x7cb342
-            bg_image_recolor_opa: 70%
-            bg_image_recolor: 0x7cb342
-            outline_width: 1
-            outline_color: white
-            bg_color: 0x7cb342
-            pad_all: 0
-            value: 0
-            min_value: 1
-            max_value: 255
-            anim_time: 100ms
-            knob:
-                radius: 1
-                width: 1
-              #  align: CENTER
-                height: 100%
-                bg_color: white
-            #    bg_color_opa: 95%
-                bg_opa: COVER
-                pad_top: 4
-                pad_bottom: 4
-                pad_right: -38
-                pad_left: -38
-           # adjustable: true
-            indicator:
-                radius: 1
-                width: 1
-                #align: CENTER
-                bg_grad_color: 0xf1e0f0
-           #     bg_grad_color: white
-                bg_grad_dir: HOR
-                height: 100%
-                pad_top: 4
-                pad_bottom: 4
-                pad_right: 3
-                pad_left: 3
-             #   pad_all: 4
-           #     pad_bottom: -30
-                bg_color: 0xf0e0a1
-                bg_opa: 90%
-          #      image_recolor_opa: 90%
-            on_click:
-                - homeassistant.service:
-                    service: light.turn_on
-                    data:
-                      entity_id: $light_control
-                      brightness: !lambda return int(x);
 
 
 
-
-
-
-
+      - label:
+          id: oracle_price_label
+          align: CENTER
+          text_font: montserrat_28 
+          text: "80.00"
+         
+          text_color: white #fallback white
+          x: 370
+          y: 50
 
 
 
@@ -1350,14 +1495,21 @@ lvgl:
             height: 150
             bg_color: white
             bg_opa: 0%
-            bg_image_recolor_opa: COVER
+            #bg_image_recolor_opa: COVER
             outline_width: 0
             outline_opa: COVER
             outline_color: 0x9e9fa0
             widgets:
               - image:
                   align: CENTER
-                  src: jarvis_round
+                  src: idle_round
+              - animimg:
+                  align: CENTER
+                  id: anim_id8
+                  src: [ replying_round, idle_round ]
+                  duration: 150ms
+                  auto_start: false
+
 
             pressed: # set some button colors to be different in pressed state
                bg_color: 0xd84315
@@ -1375,7 +1527,8 @@ lvgl:
                   data:
                      entity_id: media_player.sony_android_tv
                      is_volume_muted: "true"
-
+              - lvgl.animimg.start: anim_id8
+              - lvgl.animimg.stop: anim_id8
               - voice_assistant.start:
             on_long_press:
                 - voice_assistant.start:
@@ -1390,8 +1543,201 @@ lvgl:
                     then:
                       - voice_assistant.stop:
 
+      - obj: # thermostat popup
+            id: thermostat_popup
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: 80%
+            hidden: true
 
+            widgets:
+              # Main card
+              - obj:
+                  id: thermostat_card
+                  width: 600
+                  height: 700
+                  align: CENTER
+                  bg_color: 0x1a1a1a
+                  border_width: 3
+                  border_color: 0xFF6600
+                  radius: 15
+                  widgets:
+                    # Title bar
+                    - label:
+                        text: "Heating Control"
+                        align: TOP_MID
+                        y: 20
+                        text_color: 0xFFFFFF
+                        text_font: montserrat_32
+                    
+                    # Close button (WITH HANDLER)
+                    - button:
+                        id: thermostat_close_btn
+                        width: 50
+                        height: 50
+                        align: TOP_RIGHT
+                        x: -20
+                        y: 15
+                        on_click:
+                          - lambda: |-
+                              lv_obj_add_flag(id(thermostat_popup), LV_OBJ_FLAG_HIDDEN);
+                        widgets:
+                          - label:
+                              text: "X"
+                              text_color: 0xFFFFFF
+                              text_font: roboto
+                              align: CENTER
+                    
+                    # Current temperature display
+                    - label:
+                        id: current_temp_label
+                        text: "20.5°"
+                        align: TOP_MID
+                        y: 100
+                        text_color: 0xFFFFFF
+                        text_font: montserrat_48
+                    
+                    # Status label
+                    - label:
+                        id: thermostat_status_label
+                        text: "Currently Heating"
+                        align: TOP_MID
+                        y: 170
+                        text_color: 0xFF6600
+                        text_font: montserrat_20
+                    
+                    # Target temperature section
+                    - obj:
+                        width: 500
+                        height: 150
+                        align: CENTER
+                        y: -80
+                        bg_color: 0x2a2a2a
+                        radius: 10
+                        widgets:
+                          # Decrease button (WITH HANDLER)
+                          - button:
+                              id: temp_down_btn
+                              width: 80
+                              height: 80
+                              align: LEFT_MID
+                              x: 30
+                              bg_color: 0x3a3a3a
+                              on_click:
+                                - homeassistant.action:
+                                    action: climate.set_temperature
+                                    data:
+                                      entity_id: climate.hallway
+                                    data_template:
+                                      temperature: "{{ temperature }}"
+                                    variables:
+                                      temperature: !lambda |-
+                                        return id(thermostat_target_temp).state - 0.5;
 
+                              widgets:
+                                - label:
+                                    text: "-"
+                                    text_color: green
+                                    text_font: roboto
+                                    align: CENTER
+                          
+                          # Target temp labels
+                         # - label:
+                         #     text: "Target"
+                         #     align: TOP_MID
+                         #     y: 20
+                         #     text_color: 0xB0B0B0
+                         #     text_font: montserrat_18
+                          
+                          - label:
+                              id: target_temp_label
+                              text: "21.0°"
+                              align: CENTER
+                              text_color: 0xFFFFFF
+                              text_font: montserrat_40
+                          
+                          # Increase button (WITH HANDLER)
+                          - button:
+                              id: temp_up_btn
+                              width: 80
+                              height: 80
+                              align: RIGHT_MID
+                              x: -30
+                              bg_color: 0x3a3a3a
+                              on_click:
+                                - homeassistant.action:
+                                    action: climate.set_temperature
+                                    data:
+                                       entity_id: climate.hallway
+                                    data_template:
+                                       temperature: "{{ temperature }}"
+                                    variables:
+                                      temperature: !lambda |-
+                                         return id(thermostat_target_temp).state + 0.5;
+
+                              widgets:
+                                - label:
+                                    text: "+"
+                                    text_color: orange
+                                    text_font: roboto
+                                    align: CENTER
+                    
+                    # Mode buttons section
+                    - obj:
+                        width: 500
+                        height: 180
+                        align: BOTTOM_MID
+                        y: -20
+                        bg_opa: TRANSP
+                        border_width: 0
+                        widgets:
+                         
+                         
+                          
+                          # Normal preset button (WITH HANDLER)
+                          - button:
+                              id: preset_normal_btn
+                              width: 230
+                              height: 70
+                              x: 0
+                              y: 90
+                              bg_color: 0x3a3a3a
+                              on_click:
+                                - homeassistant.service:
+                                    service: hive.boost_heating_off
+                                    
+                                      
+                              widgets:
+                                - label:
+                                    text: "NORMAL"
+                                    text_color: 0xFFFFFF
+                                    text_font: montserrat_24
+                                    align: CENTER
+                          
+                          # Boost preset button (WITH HANDLER)
+                          - button:
+                              id: preset_boost_btn
+                              width: 230
+                              height: 70
+                              x: 250
+                              y: 90
+                              bg_color: 0x3a3a3a
+                              on_click:
+                                - homeassistant.service:
+                                    service: hive.boost_heating_on
+                                    data:
+                                      entity_id: climate.hallway
+                                      time_period: "00:30:00"
+                                      temperature: "20"
+                              widgets:
+                                - label:
+                                    text: "BOOST"
+                                    text_color: 0xFFFFFF
+                                    text_font: montserrat_24
+                                    align: CENTER
+
+ 
     - id: second_page
       on_swipe_left:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
@@ -1400,92 +1746,138 @@ lvgl:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
         - lvgl.page.previous:
       bg_color: 0x021852
+      on_load:
+        - lvgl.animimg.stop: anim_id8
       widgets:
-
-        - button: # strat
-            y: -15
-            x: 250
-            width: 300
-            height: 300
-            bg_color: white
-            bg_opa: 0%
-            bg_image_recolor_opa: COVER
-            outline_width: 0
-            outline_opa: COVER
-            outline_color: 0x9e9fa0
+        - obj: # media card
+            id: media_card
+            width: 320
+            height: 320
+            x: 175
+            y: -265
             align: CENTER
+            bg_color: 0x1a1a1a
+            bg_opa: COVER
+            border_width: 3
+            border_color: 0x2a2a2a
+            radius: 10
+            hidden: true
             widgets:
-              - image:
-                  align: CENTER
-                  src: green_strat
+              - obj:
+                  id: artwork_container
+                  width: 180
+                  height: 180
+                  align: LEFT_MID
+                  x: 30
+                  y: 0
+                  bg_color: 0x2a2a2a
+                  radius: 10
+              # Title
+              - label:
+                  id: media_title_label
+                  text: ""
+                  align: TOP_RIGHT
+                  x: -30
+                  y: 40
+                  text_color: 0xFFFFFF
+                  text_font: montserrat_24
+                  long_mode: SCROLL_CIRCULAR
+                  width: 180
+                  hidden: true
+              
+              # Artist
+              - label:
+                  id: media_artist_label
+                  text: ""
+                  align: TOP_RIGHT
+                  x: -30
+                  y: 90
+                  text_color: 0xB0B0B0
+                  text_font: montserrat_18
+                  long_mode: SCROLL_CIRCULAR
+                  width: 180
+                  hidden: true
+              
+              # Album
+              - label:
+                  id: media_album_label
+                  text: ""
+                  align: TOP_RIGHT
+                  x: -30
+                  y: 130
+                  text_color: 0x909090
+                  text_font: montserrat_16
+                  long_mode: SCROLL_CIRCULAR
+                  width: 180  
+                  hidden: true          
+
 
         - label:
 
             id: internal_temp_display
             text_font: roboto
             text_color: 0x2abbbb
-        - obj: # climate control
-              x: 35
-              y: 550
-              bg_opa: 0%
-              layout:
-                type: FLEX
-                flex_flow: ROW
-                flex_align_cross: CENTER
-
-              width: SIZE_CONTENT
-              height: SIZE_CONTENT
-              widgets:
-                - button:
-                    id: spin_down
-                    on_click:
-                      - lvgl.spinbox.decrement: spinbox_id
-                    widgets:
-                      - image:
-                          align: CENTER
-                          src: minus
-                          outline_opa: TRANSP
-                          bg_grad_color: 0x00334d
-                          bg_grad_dir: HOR
-                          bg_opa: 0%
-                          bg_image_recolor_opa: COVER
-                          image_recolor_opa: COVER
-                          image_recolor: 0x2E8AB8
-                - spinbox:
-                    id: spinbox_id
-                    align: CENTER
-                    text_align: CENTER
-                    text_font: roboto
-                    width: 150
-                    range_from: 15
-                    range_to: 35
-                    selected_digit: 0
-                    rollover: false
-                    digits: 2
-                    decimal_places: 0
-                    on_value:
-                      then:
-                        - homeassistant.action:
-                            action: climate.set_temperature
-                            data:
-                              temperature: !lambda return x;
-                              entity_id: climate.hallway
-                - button:
-                    id: spin_up
-                    on_click:
-                      - lvgl.spinbox.increment: spinbox_id
-                    widgets:
-                      - image:
-                          align: CENTER
-                          src: plus
-                          outline_opa: TRANSP
-                          bg_grad_color: 0x00334d
-                          bg_grad_dir: HOR
-                          bg_opa: 0%
-                          bg_image_recolor_opa: COVER
-                          image_recolor_opa: COVER
-                          image_recolor: 0x2E8AB8
-
+  
+        - slider: # office lamp slider
+             x: 35
+             y: 30
+             width: 660
+             height: 75
+             id: slider_id2
+             bg_opa: 70%
+             border_width: 3
+             line_color: white
+             bg_grad_color: 0xf0e0a1
+             bg_grad_dir: HOR
+             border_opa: 90%
+             image_recolor_opa: 30%
+             border_color: 0x7cb342
+             bg_image_recolor_opa: 70%
+             bg_image_recolor: 0x7cb342
+             outline_width: 1
+             outline_color: white
+             bg_color: 0x7cb342
+             pad_all: 0
+             value: 0
+             min_value: 1
+             max_value: 255
+             anim_time: 100ms
+             knob:
+                 radius: 1
+                 width: 1
+               #  align: CENTER
+                 height: 100%
+                 bg_color: white
+             #    bg_color_opa: 95%
+                 bg_opa: COVER
+                 pad_top: 4
+                 pad_bottom: 4
+                 pad_right: -38
+                 pad_left: -38
+            # adjustable: true
+             indicator:
+                 radius: 1
+                 width: 1
+                 #align: CENTER
+                 bg_grad_color: 0xf1e0f0
+            #     bg_grad_color: white
+                 bg_grad_dir: HOR
+                 height: 100%
+                 pad_top: 4
+                 pad_bottom: 4
+                 pad_right: 3
+                 pad_left: 3
+              #   pad_all: 4
+            #     pad_bottom: -30
+                 bg_color: 0xf0e0a1
+                 bg_opa: 90%
+           #      image_recolor_opa: 90%
+             on_click:
+                 - homeassistant.service:
+                     service: light.turn_on
+                     data:
+                       entity_id: $light_control
+                       brightness: !lambda return int(x);
 
 
 
@@ -1500,6 +1892,8 @@ lvgl:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
         - lvgl.page.previous:
       bg_color: 0x021852
+      on_load:
+        - lvgl.animimg.stop: anim_id8
       widgets:
       - image:
          x: 3
@@ -1528,7 +1922,7 @@ lvgl:
       - image:
          x: 845
          y: 3
-         src: athens
+         src: venice
          radius: 11
          clip_corner: true
       - image:
@@ -1537,7 +1931,7 @@ lvgl:
          src: los_angeles
          radius: 11
          clip_corner: true
-
+ 
 
   style_definitions:
     - id: header_footer
@@ -1556,6 +1950,19 @@ lvgl:
       line_color: white
       width: 100%
       height: 40
+    - id: sidebar
+      bg_color: 0xE9EFEE
+      bg_opa: COVER
+      border_opa: TRANSP
+      pad_top: 30
+      pad_left: 0
+      pad_right: 0
+      radius: 0
+      width: 192
+      height: 100%
+
+
+
 
 
 # The DAC Output select needs to be manually (or with an automation) changed to `LINE1` for the onboard speaker
@@ -1599,17 +2006,17 @@ select:
       # These cutoffs apply only to the specific models included in the firmware: okay_nabu@20241226.3, hey_jarvis@v2, hey_mycroft@v2
       lambda: |-
         if (x == "Slightly sensitive") {
-          id(okay_nabu).set_probability_cutoff(217);    // 0.85 -> 0.000 FAPH on DipCo (Manifest's default)
+         // id(okay_nabu).set_probability_cutoff(217);    // 0.85 -> 0.000 FAPH on DipCo (Manifest's default) //
           id(hey_jarvis).set_probability_cutoff(247);   // 0.97 -> 0.563 FAPH on DipCo (Manifest's default)
-          id(hey_mycroft).set_probability_cutoff(253);  // 0.99 -> 0.567 FAPH on DipCo
+        //  id(hey_mycroft).set_probability_cutoff(253);  // 0.99 -> 0.567 FAPH on DipCo //
         } else if (x == "Moderately sensitive") {
-          id(okay_nabu).set_probability_cutoff(176);    // 0.69 -> 0.376 FAPH on DipCo
+        //  id(okay_nabu).set_probability_cutoff(176);    // 0.69 -> 0.376 FAPH on DipCo//
           id(hey_jarvis).set_probability_cutoff(235);   // 0.92 -> 0.939 FAPH on DipCo
-          id(hey_mycroft).set_probability_cutoff(242);  // 0.95 -> 1.502 FAPH on DipCo (Manifest's default)
+        //  id(hey_mycroft).set_probability_cutoff(242);  // 0.95 -> 1.502 FAPH on DipCo (Manifest's default)//
         } else if (x == "Very sensitive") {
-          id(okay_nabu).set_probability_cutoff(143);    // 0.56 -> 0.751 FAPH on DipCo
+        //  id(okay_nabu).set_probability_cutoff(143);    // 0.56 -> 0.751 FAPH on DipCo //
           id(hey_jarvis).set_probability_cutoff(212);   // 0.83 -> 1.502 FAPH on DipCo
-          id(hey_mycroft).set_probability_cutoff(237);  // 0.93 -> 1.878 FAPH on DipCo
+        //  id(hey_mycroft).set_probability_cutoff(237);  // 0.93 -> 1.878 FAPH on DipCo //
         }
 
 
@@ -1662,6 +2069,7 @@ media_player:
       sample_rate: 48000
       num_channels: 1
     on_announcement:
+       - lvgl.animimg.start: anim_id8
       # Stop the wake word (mWW or VA) if the mic is capturing
        - light.turn_on:
           id: backlight
@@ -1671,7 +2079,9 @@ media_player:
             - microphone.is_capturing:
           then:
             - micro_wake_word.stop:
+
     on_idle:
+      - lvgl.animimg.stop: anim_id8
       # Since VA isn't running, this is the end of user-intiated media playback. Restart the wake word.
       - if:
           condition:
@@ -1682,19 +2092,18 @@ media_player:
 
     files:
       - id: wake_word_triggered_sound
-        file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
+        file: https://www.myinstants.com/media/sounds/sound-3_ARju4wR.mp3
+        #file: https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
 
 micro_wake_word:
   id: mww
   microphone:
     microphone: tab5_microphone
   models:
-    - model: https://github.com/kahrendt/microWakeWord/releases/download/okay_nabu_20241226.3/okay_nabu.json
-      id: okay_nabu
+
     - model: hey_jarvis
       id: hey_jarvis
-    - model: hey_mycroft
-      id: hey_mycroft
+
   vad:
   on_wake_word_detected:
    # If a timer is ringing: Stop it, do not start the voice assistant (We can stop timer from voice!)
@@ -1718,6 +2127,23 @@ voice_assistant:
   microphone: tab5_microphone
   media_player: external_media_player
   micro_wake_word: mww
+
+  on_listening:
+    - lvgl.animimg.start: anim_id8
+
+
+
+  on_tts_start:
+    - lvgl.animimg.start: anim_id8
+
+  on_tts_end:
+    - lvgl.animimg.stop: anim_id8
+
+  on_idle:
+    - lvgl.animimg.stop: anim_id8
+
+
+
   on_end:
     # Wait a short amount of time to see if an announcement starts
     - wait_until:
@@ -1795,12 +2221,14 @@ script:
           }
           
           ESP_LOGI("camera", "Cleanup complete"); 
+ 
+ 
 
-
+ 
 # TODO - if you've read this far, here's what else I'd like to add :
 # 1 - Aninmate the jarvis logo based on voice assistant activity
-# 2 - Get a better thermostat control
+# 2 - Get a better thermostat control - Done
 # 3 - Implement some person cards to show family member home/away status
-# 4 - I'd like to pull the media image from film/TV/music playing on Kodi
+# 4 - I'd like to pull the media image from film/TV/music playing on Kodi - Done
 # 5 - When the shopping list gets too long, it falls off the end, so need to implement some line wrapping
 # 6 - That's enough to be going on with thank you !
