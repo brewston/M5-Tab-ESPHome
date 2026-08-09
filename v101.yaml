@@ -27,7 +27,7 @@
 # v65: Widen the person locator with side-by-side location icons; raise notification/listening; remove footer branding.
 # v64: Enlarge and move the person locator beside ORCL; remove the ORCL circuit route.
 # v63: Remove the Linux-panel circuit route and add a four-person photo/location card.
-# v62: Left-pack active appliance indicators while keeping the washing-machine icon and timer grouped.
+# v62: Left-pack active appliance indicators while keeping the washing-machine icon and brewstoner grouped.
 # v61: Raise the power row, move appliances into the heating panel, enlarge it for person cards, and lower weather/ORCL.
 # v59: Reduce weather and ORCL panel heights to better match their contents.
 # v58: Tighten boiler/Hive/thermometer row and move the house-power meter up with its heading.
@@ -57,19 +57,19 @@ substitutions:
   # Dashboard revision shown in the bottom-right HUD footer.
   hud_version: "v101"
 
-  # Public Home Assistant URL used at compile time for /config/www/people/*.jpeg.
-  # This is the /local URL used to fetch the person portraits at compile time.
+  # Public Home Assistant URL used at compile brewstone for /config/www/people/*.jpeg.
+  # This is the /local URL used to fetch the person portraits at compile brewstone.
   ha_local_url: "http://192.168.0.7:8123/local"
 
   # Home Assistant entities - people and their zone-icon template helpers.
-  ha_person_tim: "person.tim"
-  ha_person_tim_zone_icon: "sensor.tim_zone_icon"
-  ha_person_emma: "person.emma"
-  ha_person_emma_zone_icon: "sensor.emma_zone_icon"
-  ha_person_isobel: "person.isobel"
-  ha_person_isobel_zone_icon: "sensor.isobel_zone_icon"
-  ha_person_ellie: "person.ellie"
-  ha_person_ellie_zone_icon: "sensor.ellie_zone_icon"
+  ha_person_brewston: "person.brewston"
+  ha_person_brewston_zone_icon: "sensor.brewston_zone_icon"
+  ha_person_wife: "person.wife"
+  ha_person_wife_zone_icon: "sensor.wife_zone_icon"
+  ha_person_child1: "person.child1"
+  ha_person_child1_zone_icon: "sensor.child1_zone_icon"
+  ha_person_child2: "person.child2"
+  ha_person_child2_zone_icon: "sensor.child2_zone_icon"
 
   # Home Assistant entities - climate, weather and household state.
   ha_climate_hallway: "climate.hallway"
@@ -89,7 +89,7 @@ substitutions:
   # Home Assistant entities - health and market data.
   ha_sleep_duration: "sensor.sleep_duration_formatted"
   ha_energy: "sensor.energy"
-  ha_daily_steps: "sensor.tim_s26_daily_steps"
+  ha_daily_steps: "sensor.brewston_s26_daily_steps"
   ha_oracle_price: "sensor.oracle_2"
   ha_oracle_change: "sensor.orcl_change"
 
@@ -669,11 +669,11 @@ text_sensor:
   # and Ellie, changing the person entity/name/unique_id as shown below:
   #
   # - sensor:
-  #     - name: Tim Zone Icon
-  #       default_entity_id: sensor.tim_zone_icon
-  #       unique_id: m5tab_tim_zone_icon
+  #     - name: Brewston Zone Icon
+  #       default_entity_id: sensor.brewston_zone_icon
+  #       unique_id: m5tab_brewston_zone_icon
   #       state: >-
-  #         {% set location = states('person.tim') %}
+  #         {% set location = states('person.brewston') %}
   #         {% if location == 'home' %}
   #           {{ state_attr('zone.home', 'icon') or 'mdi:home' }}
   #         {% elif location in ['not_home', 'unknown', 'unavailable'] %}
@@ -689,10 +689,10 @@ text_sensor:
   #         {% endif %}
   #
   #     - name: Emma Zone Icon
-  #       default_entity_id: sensor.emma_zone_icon
-  #       unique_id: m5tab_emma_zone_icon
+  #       default_entity_id: sensor.wife_zone_icon
+  #       unique_id: m5tab_wife_zone_icon
   #       state: >-
-  #         {% set location = states('person.emma') %}
+  #         {% set location = states('person.wife') %}
   #         {% if location == 'home' %}
   #           {{ state_attr('zone.home', 'icon') or 'mdi:home' }}
   #         {% elif location in ['not_home', 'unknown', 'unavailable'] %}
@@ -708,10 +708,10 @@ text_sensor:
   #         {% endif %}
   #
   #     - name: Isobel Zone Icon
-  #       default_entity_id: sensor.isobel_zone_icon
-  #       unique_id: m5tab_isobel_zone_icon
+  #       default_entity_id: sensor.child1_zone_icon
+  #       unique_id: m5tab_child1_zone_icon
   #       state: >-
-  #         {% set location = states('person.isobel') %}
+  #         {% set location = states('person.child1') %}
   #         {% if location == 'home' %}
   #           {{ state_attr('zone.home', 'icon') or 'mdi:home' }}
   #         {% elif location in ['not_home', 'unknown', 'unavailable'] %}
@@ -727,10 +727,10 @@ text_sensor:
   #         {% endif %}
   #
   #     - name: Ellie Zone Icon
-  #       default_entity_id: sensor.ellie_zone_icon
-  #       unique_id: m5tab_ellie_zone_icon
+  #       default_entity_id: sensor.child2_zone_icon
+  #       unique_id: m5tab_child2_zone_icon
   #       state: >-
-  #         {% set location = states('person.ellie') %}
+  #         {% set location = states('person.child2') %}
   #         {% if location == 'home' %}
   #           {{ state_attr('zone.home', 'icon') or 'mdi:home' }}
   #         {% elif location in ['not_home', 'unknown', 'unavailable'] %}
@@ -745,53 +745,53 @@ text_sensor:
   #           {{ ns.icon }}
   #         {% endif %}
   - platform: homeassistant
-    id: person_tim_state
-    entity_id: ${ha_person_tim}
+    id: person_brewston_state
+    entity_id: ${ha_person_brewston}
     internal: true
     on_value:
       - script.execute: refresh_ha_widgets
   - platform: homeassistant
-    id: person_tim_zone_icon
+    id: person_brewston_zone_icon
     entity_id: ${ha_person_tim_zone_icon}
     internal: true
     on_value:
       - script.execute: refresh_ha_widgets
 
   - platform: homeassistant
-    id: person_emma_state
-    entity_id: ${ha_person_emma}
+    id: person_wife_state
+    entity_id: ${ha_person_wife}
     internal: true
     on_value:
       - script.execute: refresh_ha_widgets
   - platform: homeassistant
-    id: person_emma_zone_icon
-    entity_id: ${ha_person_emma_zone_icon}
-    internal: true
-    on_value:
-      - script.execute: refresh_ha_widgets
-
-  - platform: homeassistant
-    id: person_isobel_state
-    entity_id: ${ha_person_isobel}
-    internal: true
-    on_value:
-      - script.execute: refresh_ha_widgets
-  - platform: homeassistant
-    id: person_isobel_zone_icon
-    entity_id: ${ha_person_isobel_zone_icon}
+    id: person_wife_zone_icon
+    entity_id: ${ha_person_wife_zone_icon}
     internal: true
     on_value:
       - script.execute: refresh_ha_widgets
 
   - platform: homeassistant
-    id: person_ellie_state
-    entity_id: ${ha_person_ellie}
+    id: person_child1_state
+    entity_id: ${ha_person_child1}
     internal: true
     on_value:
       - script.execute: refresh_ha_widgets
   - platform: homeassistant
-    id: person_ellie_zone_icon
-    entity_id: ${ha_person_ellie_zone_icon}
+    id: person_child1_zone_icon
+    entity_id: ${ha_person_child1_zone_icon}
+    internal: true
+    on_value:
+      - script.execute: refresh_ha_widgets
+
+  - platform: homeassistant
+    id: person_child2_state
+    entity_id: ${ha_person_child2}
+    internal: true
+    on_value:
+      - script.execute: refresh_ha_widgets
+  - platform: homeassistant
+    id: person_child2_zone_icon
+    entity_id: ${ha_person_child2_zone_icon}
     internal: true
     on_value:
       - script.execute: refresh_ha_widgets
@@ -1268,23 +1268,23 @@ image:
   # Portraits are embedded at compile time from Home Assistant's public
   # /local/people directory, avoiding runtime image downloads and decoding.
   - platform: file
-    file: "${ha_local_url}/people/tim.jpeg"
-    id: person_tim_photo
+    file: "${ha_local_url}/people/brewston.jpeg"
+    id: person_brewston_photo
     type: RGB565
     resize: 58x58
   - platform: file
-    file: "${ha_local_url}/people/emma.jpeg"
-    id: person_emma_photo
+    file: "${ha_local_url}/people/wife.jpeg"
+    id: person_wife_photo
     type: RGB565
     resize: 58x58
   - platform: file
-    file: "${ha_local_url}/people/isobel.jpeg"
-    id: person_isobel_photo
+    file: "${ha_local_url}/people/child1.jpeg"
+    id: person_child1_photo
     type: RGB565
     resize: 58x58
   - platform: file
-    file: "${ha_local_url}/people/ellie.jpeg"
-    id: person_ellie_photo
+    file: "${ha_local_url}/people/child2.jpeg"
+    id: person_child2_photo
     type: RGB565
     resize: 58x58
 
@@ -4522,7 +4522,7 @@ lvgl:
           border_opa: 64%
           clickable: false
       - obj:
-          id: person_emma_frame
+          id: person_wife_frame
           align: TOP_LEFT
           x: 562
           y: 640
@@ -4535,7 +4535,7 @@ lvgl:
           border_opa: 64%
           clickable: false
       - obj:
-          id: person_isobel_frame
+          id: person_child1_frame
           align: TOP_LEFT
           x: 732
           y: 640
@@ -4548,7 +4548,7 @@ lvgl:
           border_opa: 64%
           clickable: false
       - obj:
-          id: person_ellie_frame
+          id: person_child2_frame
           align: TOP_LEFT
           x: 902
           y: 640
@@ -4562,29 +4562,29 @@ lvgl:
           clickable: false
 
       - image:
-          id: person_tim_img
-          src: person_tim_photo
+          id: person_brewston_img
+          src: person_brewston_photo
           align: TOP_LEFT
           x: 394
           y: 642
           clickable: false
       - image:
-          id: person_emma_img
-          src: person_emma_photo
+          id: person_wife_img
+          src: person_wife_photo
           align: TOP_LEFT
           x: 564
           y: 642
           clickable: false
       - image:
-          id: person_isobel_img
-          src: person_isobel_photo
+          id: person_child1_img
+          src: person_child1_photo
           align: TOP_LEFT
           x: 734
           y: 642
           clickable: false
       - image:
-          id: person_ellie_img
-          src: person_ellie_photo
+          id: person_child2_img
+          src: person_child2_photo
           align: TOP_LEFT
           x: 904
           y: 642
@@ -4593,7 +4593,7 @@ lvgl:
       # Equal-size location tiles. Their positions/visibility are packed
       # dynamically by refresh_ha_widgets.
       - obj:
-          id: person_tim_location_badge
+          id: person_brewston_location_badge
           align: TOP_LEFT
           x: 462
           y: 640
@@ -4607,7 +4607,7 @@ lvgl:
           border_opa: 70%
           clickable: false
       - obj:
-          id: person_emma_location_badge
+          id: person_wife_location_badge
           align: TOP_LEFT
           x: 632
           y: 640
@@ -4621,7 +4621,7 @@ lvgl:
           border_opa: 70%
           clickable: false
       - obj:
-          id: person_isobel_location_badge
+          id: person_child1_location_badge
           align: TOP_LEFT
           x: 802
           y: 640
@@ -4635,7 +4635,7 @@ lvgl:
           border_opa: 70%
           clickable: false
       - obj:
-          id: person_ellie_location_badge
+          id: person_child2_location_badge
           align: TOP_LEFT
           x: 972
           y: 640
@@ -4650,7 +4650,7 @@ lvgl:
           clickable: false
 
       - image:
-          id: person_tim_location_img
+          id: person_brewston_location_img
           src: person_loc_unknown
           align: TOP_LEFT
           x: 464
@@ -4659,7 +4659,7 @@ lvgl:
           image_recolor_opa: 100%
           clickable: false
       - image:
-          id: person_emma_location_img
+          id: person_wife_location_img
           src: person_loc_unknown
           align: TOP_LEFT
           x: 634
@@ -4668,7 +4668,7 @@ lvgl:
           image_recolor_opa: 100%
           clickable: false
       - image:
-          id: person_isobel_location_img
+          id: person_child1_location_img
           src: person_loc_unknown
           align: TOP_LEFT
           x: 804
@@ -4677,7 +4677,7 @@ lvgl:
           image_recolor_opa: 100%
           clickable: false
       - image:
-          id: person_ellie_location_img
+          id: person_child2_location_img
           src: person_loc_unknown
           align: TOP_LEFT
           x: 974
@@ -6915,35 +6915,35 @@ script:
             last_value = key;
           };
 
-          static std::string last_tim_location = "\x01";
-          static std::string last_emma_location = "\x01";
-          static std::string last_isobel_location = "\x01";
-          static std::string last_ellie_location = "\x01";
-          update_person_location(id(person_tim_location_img),
-                                 id(person_tim_state).state,
-                                 id(person_tim_zone_icon).state,
-                                 last_tim_location);
-          update_person_location(id(person_emma_location_img),
-                                 id(person_emma_state).state,
-                                 id(person_emma_zone_icon).state,
-                                 last_emma_location);
-          update_person_location(id(person_isobel_location_img),
-                                 id(person_isobel_state).state,
-                                 id(person_isobel_zone_icon).state,
-                                 last_isobel_location);
-          update_person_location(id(person_ellie_location_img),
-                                 id(person_ellie_state).state,
-                                 id(person_ellie_zone_icon).state,
-                                 last_ellie_location);
+          static std::string last_brewston_location = "\x01";
+          static std::string last_wife_location = "\x01";
+          static std::string last_child1_location = "\x01";
+          static std::string last_child2_location = "\x01";
+          update_person_location(id(person_brewston_location_img),
+                                 id(person_brewston_state).state,
+                                 id(person_brewston_zone_icon).state,
+                                 last_brewston_location);
+          update_person_location(id(person_wife_location_img),
+                                 id(person_wife_state).state,
+                                 id(person_wife_zone_icon).state,
+                                 last_wife_location);
+          update_person_location(id(person_child1_location_img),
+                                 id(person_child1_state).state,
+                                 id(person_child1_zone_icon).state,
+                                 last_child1_location);
+          update_person_location(id(person_child2_location_img),
+                                 id(person_child2_state).state,
+                                 id(person_child2_zone_icon).state,
+                                 last_child2_location);
 
           // Compact person layout. All portraits currently at home are packed
           // first and share a single house tile; everyone else keeps their own
           // portrait + location tile. Layout only changes when home membership changes.
           const int person_home_mask =
-              (lower_person_text(id(person_tim_state).state) == "home" ? 1 : 0) |
-              (lower_person_text(id(person_emma_state).state) == "home" ? 2 : 0) |
-              (lower_person_text(id(person_isobel_state).state) == "home" ? 4 : 0) |
-              (lower_person_text(id(person_ellie_state).state) == "home" ? 8 : 0);
+              (lower_person_text(id(person_brewston_state).state) == "home" ? 1 : 0) |
+              (lower_person_text(id(person_wife_state).state) == "home" ? 2 : 0) |
+              (lower_person_text(id(person_child1_state).state) == "home" ? 4 : 0) |
+              (lower_person_text(id(person_child2_state).state) == "home" ? 8 : 0);
           static int last_person_home_mask = -1;
           if (person_home_mask != last_person_home_mask) {
             struct PersonTile {
@@ -6954,17 +6954,17 @@ script:
               bool home;
             };
             PersonTile people[] = {
-              {id(person_tim_frame), id(person_tim_img),
-               id(person_tim_location_badge), id(person_tim_location_img),
+              {id(person_brewston_frame), id(person_brewston_img),
+               id(person_brewston_location_badge), id(person_brewston_location_img),
                (person_home_mask & 1) != 0},
-              {id(person_emma_frame), id(person_emma_img),
-               id(person_emma_location_badge), id(person_emma_location_img),
+              {id(person_wife_frame), id(person_wife_img),
+               id(person_wife_location_badge), id(person_wife_location_img),
                (person_home_mask & 2) != 0},
-              {id(person_isobel_frame), id(person_isobel_img),
-               id(person_isobel_location_badge), id(person_isobel_location_img),
+              {id(person_child1_frame), id(person_child1_img),
+               id(person_child1_location_badge), id(person_child1_location_img),
                (person_home_mask & 4) != 0},
-              {id(person_ellie_frame), id(person_ellie_img),
-               id(person_ellie_location_badge), id(person_ellie_location_img),
+              {id(person_child2_frame), id(person_child2_img),
+               id(person_child2_location_badge), id(person_child2_location_img),
                (person_home_mask & 8) != 0},
             };
 
