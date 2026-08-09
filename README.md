@@ -3,7 +3,7 @@ M5 Tab code, based on GinAndBacon's hard work at https://github.com/GinAndBacon/
 
 New code uploaded (old code archived as v1) 
 
-![Single Page](https://raw.githubusercontent.com/brewston/M5-Tab-ESPHome/main/original.jpeg)
+![Single Page](https://raw.githubusercontent.com/brewston/M5-Tab-ESPHome/main/20260809_095533.jpg)
 
 
 ~~The code requires esphome dev branch to compile. Currently running 2025.12.0-dev20251205~~
